@@ -139,7 +139,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
 ]
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_ALL_ORIGINS = True  # Hackathon demo mode
+CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only allow all origins in debug/demo mode
 
 # Bluesky (Appendix B) - from .env
 BLUESKY_HANDLE = os.environ.get("BLUESKY_HANDLE", "")
@@ -148,9 +148,20 @@ BLUESKY_APP_PASSWORD = os.environ.get("BLUESKY_APP_PASSWORD", "")
 # Fixtures for demo scenarios (Section 10, 14)
 FIXTURE_DIRS = [os.path.join(BASE_DIR, "fixtures")]
 
-# Channels (optional: Redis for production layer)
-CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels.layers.inmemory.InMemoryChannelLayer",
-    },
-}
+# Channels – prefer Redis (Upstash), fall back to in-memory
+_redis_url = os.environ.get("REDIS_URL", "")
+if _redis_url:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {
+                "hosts": [_redis_url],
+            },
+        },
+    }
+else:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer",
+        },
+    }

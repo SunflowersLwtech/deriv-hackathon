@@ -31,21 +31,21 @@ def detect_revenge_trading(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
             'time_window': ''
         }
     
-    # Sort trades by time (most recent first)
-    sorted_trades = sorted(trades, key=lambda t: t['opened_at'], reverse=True)
-    
+    # Sort trades by time (oldest first) so we find a loss then look forward
+    sorted_trades = sorted(trades, key=lambda t: t['opened_at'])
+
     # Look for pattern: initial loss followed by rapid trades
-    for i in range(len(sorted_trades) - 2):
+    for i in range(len(sorted_trades)):
         first_trade = sorted_trades[i]
-        
+
         # Check if this trade was a loss
         if float(first_trade.get('pnl', 0)) >= 0:
             continue
-        
-        # Count trades within 10 minutes after this loss
+
+        # Count trades within 10 minutes AFTER this loss
         rapid_trades = [first_trade]
         time_threshold = first_trade['opened_at'] + timedelta(minutes=10)
-        
+
         for j in range(i + 1, len(sorted_trades)):
             next_trade = sorted_trades[j]
             if next_trade['opened_at'] <= time_threshold:

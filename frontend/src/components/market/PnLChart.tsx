@@ -142,13 +142,13 @@ export default function PnLChart({
           <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
           <XAxis
             dataKey="time"
-            tick={{ fontSize: 9, fill: "#71717a", fontFamily: "JetBrains Mono, monospace" }}
+            tick={{ fontSize: 11, fill: "#71717a", fontFamily: "JetBrains Mono, monospace" }}
             axisLine={{ stroke: "#27272a" }}
             tickLine={false}
             interval="preserveStartEnd"
           />
           <YAxis
-            tick={{ fontSize: 9, fill: "#71717a", fontFamily: "JetBrains Mono, monospace" }}
+            tick={{ fontSize: 11, fill: "#71717a", fontFamily: "JetBrains Mono, monospace" }}
             axisLine={false}
             tickLine={false}
             domain={["auto", "auto"]}
@@ -158,10 +158,11 @@ export default function PnLChart({
             contentStyle={{
               background: "#0a0a0a",
               border: "1px solid #27272a",
-              borderRadius: "2px",
-              fontSize: "10px",
+              borderRadius: "6px",
+              fontSize: "12px",
               fontFamily: "JetBrains Mono, monospace",
               color: "#ffffff",
+              padding: "8px 12px",
             }}
             formatter={(value: number | undefined) => [Number(value ?? 0).toFixed(2), "Value"]}
           />
@@ -185,17 +186,17 @@ export default function PnLChart({
   }, [isLoading, data, height, chartColor]);
 
   return (
-    <div className={cn("bg-card border border-border rounded-sm p-4", className)}>
-      <div className="flex items-center justify-between mb-4">
+    <div className={cn("bg-card border border-border rounded-md p-6", className)}>
+      <div className="flex items-center justify-between mb-5">
         <div>
-          <h3 className="text-[10px] font-semibold tracking-wider text-muted uppercase mono-data">{title}</h3>
-          <div className="flex items-baseline gap-3 mt-1">
-            <span className="text-2xl font-bold mono-data text-white">
+          <h3 className="text-xs font-semibold tracking-wider text-muted uppercase mono-data">{title}</h3>
+          <div className="flex items-baseline gap-3 mt-2">
+            <span className="text-3xl font-bold mono-data text-white">
               {currentValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
             </span>
             <span
               className={cn(
-                "text-sm mono-data font-semibold",
+                "text-base mono-data font-semibold",
                 isPositive ? "text-profit glow-green" : "text-loss glow-red"
               )}
             >
@@ -206,8 +207,8 @@ export default function PnLChart({
         </div>
 
         <div className="flex items-center gap-2">
-          <div className={cn("w-2 h-2 rounded-full", isPositive ? "bg-profit" : "bg-loss")} />
-          <span className="text-[9px] text-muted mono-data">LIVE</span>
+          <div className={cn("w-2.5 h-2.5 rounded-full", isPositive ? "bg-profit" : "bg-loss")} />
+          <span className="text-xs text-muted mono-data">LIVE</span>
         </div>
       </div>
 

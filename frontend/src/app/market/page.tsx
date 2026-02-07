@@ -10,7 +10,7 @@ import CollapsibleSection from "@/components/ui/CollapsibleSection";
 import LoadingDots from "@/components/ui/LoadingDots";
 import { cn } from "@/lib/utils";
 import api, { type MarketSentiment, type MarketTechnicals } from "@/lib/api";
-import { useInstrumentUniverse } from "@/hooks/useMarketData";
+import { useInstrumentUniverse, useEconomicCalendar, useTopHeadlines } from "@/hooks/useMarketData";
 
 const INSTRUMENT_ICONS: Record<string, string> = {
   "EUR/USD": "💶",
@@ -100,44 +100,44 @@ export default function MarketPage() {
 
   return (
     <AppShell>
-      <div className="p-6 md:p-8 space-y-6">
+      <div className="p-6 md:p-10 space-y-8">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold text-white tracking-tight">Market Analysis</h1>
-            <p className="text-xs text-muted mono-data mt-1">AI-powered market intelligence and technical analysis</p>
+            <h1 className="text-2xl font-bold text-white tracking-tight">Market Analysis</h1>
+            <p className="text-sm text-muted mono-data mt-2">AI-powered market intelligence and technical analysis</p>
           </div>
           <DisclaimerBadge variant="banner" text="Educational analysis only. Not trading signals." className="max-w-xs" />
         </div>
 
-        <div className="flex items-center gap-0 border border-border rounded-sm overflow-hidden w-fit flex-wrap">
+        <div className="flex items-center gap-0 border border-border rounded-md overflow-hidden w-fit flex-wrap">
           {availableInstruments.map((symbol) => (
             <button
               key={symbol}
               onClick={() => setSelectedInstrument(symbol)}
               className={cn(
-                "px-4 py-2.5 text-xs font-medium tracking-wider mono-data transition-colors border-r border-border last:border-r-0 flex items-center gap-2",
+                "px-5 py-3 text-sm font-medium tracking-wider mono-data transition-colors border-r border-border last:border-r-0 flex items-center gap-2.5",
                 selectedInstrument === symbol
                   ? "bg-white text-black"
                   : "bg-transparent text-muted hover:text-white hover:bg-surface"
               )}
             >
-              <span className="text-sm">{INSTRUMENT_ICONS[symbol] || "📊"}</span>
+              <span className="text-base">{INSTRUMENT_ICONS[symbol] || "📊"}</span>
               {symbol}
             </button>
           ))}
           {availableInstruments.length === 0 && (
-            <span className="px-4 py-2 text-xs text-muted mono-data">No instruments available from backend.</span>
+            <span className="px-5 py-3 text-sm text-muted mono-data">No instruments available from backend.</span>
           )}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
-            <PnLChart title={`${selectedInstrument || "MARKET"} PRICE CHART`} height={340} instrument={selectedInstrument || undefined} timeframe="1h" />
+            <PnLChart title={`${selectedInstrument || "MARKET"} PRICE CHART`} height={380} instrument={selectedInstrument || undefined} timeframe="1h" />
           </div>
 
-          <div className="space-y-4">
-            <div className="bg-card border border-border rounded-sm p-5">
-              <h3 className="text-xs font-semibold tracking-wider text-muted uppercase mono-data mb-4">TECHNICAL INDICATORS</h3>
+          <div className="space-y-5">
+            <div className="bg-card border border-border rounded-md p-6">
+              <h3 className="text-sm font-semibold tracking-wider text-muted uppercase mono-data mb-5">TECHNICAL INDICATORS</h3>
               {isMetricsLoading ? (
                 <div className="flex items-center gap-2 text-xs text-muted mono-data"><LoadingDots /> Loading indicators...</div>
               ) : (
@@ -191,8 +191,8 @@ export default function MarketPage() {
           </div>
         </div>
 
-        <div className="bg-card border border-border rounded-sm p-5">
-          <h3 className="text-xs font-semibold tracking-wider text-muted uppercase mono-data mb-4">ASK THE AI ANALYST</h3>
+        <div className="bg-card border border-border rounded-md p-6">
+          <h3 className="text-sm font-semibold tracking-wider text-muted uppercase mono-data mb-5">ASK THE AI ANALYST</h3>
           <div className="flex gap-3">
             <input
               type="text"
@@ -201,7 +201,7 @@ export default function MarketPage() {
               onKeyDown={(e) => e.key === "Enter" && handleAskAnalyst()}
               placeholder={`Ask about ${selectedInstrument || "the selected instrument"}...`}
               className={cn(
-                "flex-1 bg-surface border border-border rounded-sm px-4 py-3",
+                "flex-1 bg-surface border border-border rounded-md px-5 py-3.5",
                 "text-sm text-white placeholder:text-muted-foreground mono-data",
                 "focus:outline-none focus:border-muted transition-colors"
               )}
@@ -210,7 +210,7 @@ export default function MarketPage() {
               onClick={handleAskAnalyst}
               disabled={!question.trim() || isAnalyzing || !selectedInstrument}
               className={cn(
-                "px-5 py-3 rounded-sm text-xs font-semibold tracking-wider mono-data transition-all",
+                "px-6 py-3.5 rounded-md text-sm font-semibold tracking-wider mono-data transition-all",
                 question.trim() && !isAnalyzing && selectedInstrument
                   ? "bg-white text-black hover:bg-gray-200"
                   : "bg-border text-muted-foreground cursor-not-allowed"
@@ -237,7 +237,7 @@ export default function MarketPage() {
             </div>
           )}
 
-          <div className="flex flex-wrap gap-2.5 mt-4">
+          <div className="flex flex-wrap gap-3 mt-5">
             {[
               `What's happening with ${selectedInstrument || "this instrument"}?`,
               `Key support/resistance for ${selectedInstrument || "this instrument"}`,
@@ -247,7 +247,7 @@ export default function MarketPage() {
               <button
                 key={q}
                 onClick={() => setQuestion(q)}
-                className="px-3 py-1.5 rounded-sm text-[11px] mono-data text-muted border border-border/50 hover:border-muted hover:text-white transition-colors"
+                className="px-4 py-2 rounded-md text-xs mono-data text-muted border border-border/50 hover:border-muted hover:text-white transition-colors"
               >
                 {q}
               </button>
@@ -257,9 +257,83 @@ export default function MarketPage() {
 
         <MarketOverview />
 
+        {/* Economic Calendar */}
+        <EconomicCalendarPanel />
+
+        {/* Top Headlines */}
+        <TopHeadlinesPanel />
+
         <DisclaimerBadge variant="footer" />
       </div>
     </AppShell>
+  );
+}
+
+function EconomicCalendarPanel() {
+  const { data: events, isLoading } = useEconomicCalendar();
+
+  if (isLoading) return null;
+  if (!events || events.length === 0) return null;
+
+  const impactColor: Record<string, string> = {
+    high: "text-loss", "3": "text-loss",
+    medium: "text-warning", "2": "text-warning",
+    low: "text-muted", "1": "text-muted",
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-md overflow-hidden">
+      <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
+        <h3 className="text-xs font-semibold tracking-widest mono-data text-muted">ECONOMIC CALENDAR</h3>
+        <span className="text-[11px] text-muted-foreground mono-data">FINNHUB</span>
+      </div>
+      <div className="divide-y divide-border/30 max-h-[300px] overflow-y-auto">
+        {events.slice(0, 12).map((ev, i) => (
+          <div key={i} className="px-5 py-3 flex items-center justify-between text-sm mono-data">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <span className="text-muted-foreground w-6 shrink-0">{ev.country}</span>
+              <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", ev.impact === "high" || ev.impact === "3" ? "bg-loss" : ev.impact === "medium" || ev.impact === "2" ? "bg-warning" : "bg-muted")} />
+              <span className="text-white truncate">{ev.event}</span>
+            </div>
+            <div className="flex items-center gap-4 shrink-0 ml-2">
+              <span className="text-muted-foreground text-[10px]">{ev.date} {ev.time}</span>
+              {ev.actual !== null && <span className={cn("font-medium", impactColor[ev.impact] || "text-white")}>{ev.actual}{ev.unit}</span>}
+              {ev.actual === null && ev.estimate !== null && <span className="text-muted-foreground">est: {ev.estimate}{ev.unit}</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TopHeadlinesPanel() {
+  const { data: headlines, isLoading } = useTopHeadlines();
+
+  if (isLoading) return null;
+  if (!headlines || headlines.length === 0) return null;
+
+  return (
+    <div className="bg-card border border-border rounded-sm overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
+        <h3 className="text-[10px] font-semibold tracking-widest mono-data text-muted">TOP HEADLINES</h3>
+        <span className="text-[9px] text-muted-foreground mono-data">NEWSAPI</span>
+      </div>
+      <div className="divide-y divide-border/30 max-h-[200px] overflow-y-auto">
+        {headlines.slice(0, 8).map((h, i) => (
+          <a
+            key={i}
+            href={h.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block px-4 py-2.5 hover:bg-surface/50 transition-colors"
+          >
+            <div className="text-[11px] text-white mono-data leading-snug line-clamp-2">{h.title}</div>
+            <div className="text-[9px] text-muted-foreground mt-1 mono-data">{h.source} &middot; {new Date(h.publishedAt).toLocaleTimeString()}</div>
+          </a>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -283,12 +357,12 @@ function TechnicalIndicator({
   };
 
   return (
-    <div className="flex items-center justify-between py-0.5">
+    <div className="flex items-center justify-between py-1.5">
       <div>
-        <span className="text-xs text-muted-foreground mono-data">{label}</span>
-        <span className="text-[10px] text-muted-foreground/50 ml-1.5">({description})</span>
+        <span className="text-sm text-muted-foreground mono-data">{label}</span>
+        <span className="text-xs text-muted-foreground/50 ml-2">({description})</span>
       </div>
-      <span className={cn("text-sm font-medium mono-data", statusColors[status] || "text-white")}>{value}</span>
+      <span className={cn("text-base font-medium mono-data", statusColors[status] || "text-white")}>{value}</span>
     </div>
   );
 }

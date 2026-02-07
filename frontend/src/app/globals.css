@@ -42,6 +42,8 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
+  line-height: 1.6;
+  font-size: 14px;
 }
 
 /* Scrollbar styling */
@@ -227,4 +229,32 @@ body {
 ::selection {
   background: rgba(59, 130, 246, 0.3);
   color: #ffffff;
+}
+
+/* Global density adjustments to reduce over-compact UI */
+.text-\[8px\] {
+  font-size: 11px !important;
+  line-height: 1.5 !important;
+}
+
+.text-\[9px\] {
+  font-size: 12px !important;
+  line-height: 1.5 !important;
+}
+
+.text-\[10px\] {
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+}
+
+.text-\[11px\] {
+  font-size: 14px !important;
+  line-height: 1.6 !important;
+}
+
+/* Improved spacing for readability */
+.mono-data {
+  font-family: "JetBrains Mono", monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
 }

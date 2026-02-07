@@ -31,9 +31,7 @@ def generate_draft(
         persona = AIPersona.objects.get(id=persona_id)
     except AIPersona.DoesNotExist:
         return {"error": "Persona not found"}
-    
-    llm = get_llm_client()
-    
+
     # Build persona-specific prompt
     persona_prompt = persona.system_prompt or f"You are {persona.name}. {SYSTEM_PROMPT_CONTENT}"
     
@@ -60,6 +58,7 @@ Requirements:
 Generate ONLY the post content, no explanations."""
     
     try:
+        llm = get_llm_client()
         content = llm.simple_chat(
             system_prompt=persona_prompt,
             user_message=prompt,
@@ -116,9 +115,7 @@ def generate_thread(
         persona = AIPersona.objects.get(id=persona_id)
     except AIPersona.DoesNotExist:
         return {"error": "Persona not found"}
-    
-    llm = get_llm_client()
-    
+
     persona_prompt = persona.system_prompt or f"You are {persona.name}. {SYSTEM_PROMPT_CONTENT}"
     
     prompt = f"""Generate a {platform} thread about: {topic}
@@ -141,6 +138,7 @@ Return JSON array with {num_posts} posts:
 ]"""
     
     try:
+        llm = get_llm_client()
         response = llm.simple_chat(
             system_prompt=persona_prompt,
             user_message=prompt,

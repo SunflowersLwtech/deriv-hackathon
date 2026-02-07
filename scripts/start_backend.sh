@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+# ─── TradeIQ Backend (Development Mode) ───────────────────
+# Starts Django dev server with ASGI support (Daphne).
+# Requires: conda env 'tradeiq', .env configured.
+#
+# Usage:
+#   chmod +x scripts/start_backend.sh
+#   ./scripts/start_backend.sh
+# ───────────────────────────────────────────────────────────
 
 set -euo pipefail
 
@@ -36,4 +44,9 @@ echo "Python: $(command -v python)"
 
 cd "${BACKEND_DIR}"
 
-python manage.py runserver "${HOST}:${PORT}"
+# Run migrations before starting
+python manage.py migrate --noinput 2>/dev/null || true
+
+# Use Daphne for WebSocket support in development too
+echo "Starting Daphne ASGI server on ${HOST}:${PORT}..."
+daphne -b "${HOST}" -p "${PORT}" tradeiq.asgi:application

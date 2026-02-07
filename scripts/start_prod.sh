@@ -24,15 +24,23 @@ FRONTEND_PORT="${TRADEIQ_FRONTEND_PORT:-3000}"
 # Colors
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
+RED='\033[0;31m'
 NC='\033[0m'
 
 echo -e "${CYAN}═══════════════════════════════════════════${NC}"
 echo -e "${CYAN}  TradeIQ Production Deployment${NC}"
 echo -e "${CYAN}═══════════════════════════════════════════${NC}"
 
+# ── Check .env ──
+if [[ ! -f "${PROJECT_ROOT}/.env" ]]; then
+  echo -e "${RED}Error: .env file not found. Copy from .env.example:${NC}"
+  echo -e "  cp .env.example .env"
+  exit 1
+fi
+
 # ── Init conda ──
 if ! command -v conda >/dev/null 2>&1; then
-  echo "Error: conda not found"; exit 1
+  echo -e "${RED}Error: conda not found${NC}"; exit 1
 fi
 
 if conda shell.bash hook >/dev/null 2>&1; then
@@ -45,15 +53,12 @@ fi
 conda activate "${ENV_NAME}"
 echo -e "${GREEN}✓ Conda env: ${CONDA_DEFAULT_ENV}${NC}"
 
-# ── Backend: collect static + start daphne ──
+# ── Backend: migrate + collect static ──
 echo -e "\n${CYAN}[1/3] Preparing backend...${NC}"
 cd "${BACKEND_DIR}"
 
-# Collect static files
-python manage.py collectstatic --noinput 2>/dev/null || true
-
-# Run migrations
 python manage.py migrate --noinput 2>/dev/null || true
+python manage.py collectstatic --noinput 2>/dev/null || true
 
 echo -e "${GREEN}✓ Backend ready${NC}"
 
@@ -65,7 +70,8 @@ if [[ ! -d node_modules ]]; then
   npm ci
 fi
 
-npm run build
+# Set standalone output for production
+NEXT_OUTPUT=standalone npm run build
 echo -e "${GREEN}✓ Frontend built${NC}"
 
 # ── Start both services ──
@@ -97,6 +103,7 @@ echo -e "${GREEN}═════════════════════
 echo -e "  Frontend: http://${FRONTEND_HOST}:${FRONTEND_PORT}"
 echo -e "  Backend:  http://${BACKEND_HOST}:${BACKEND_PORT}"
 echo -e "  API:      http://${BACKEND_HOST}:${BACKEND_PORT}/api/"
+echo -e "  Pipeline: http://${FRONTEND_HOST}:${FRONTEND_PORT}/pipeline"
 echo -e ""
 echo -e "  Press Ctrl+C to stop all services."
 echo ""

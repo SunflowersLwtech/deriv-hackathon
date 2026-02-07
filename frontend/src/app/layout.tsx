@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   description:
     "The Bloomberg Terminal for retail traders. AI-powered market analysis, behavioral coaching, and social content generation.",
   icons: {
-    icon: "/favicon.ico",
+    icon: "/tradeiq_favicon.svg",
   },
 };
 

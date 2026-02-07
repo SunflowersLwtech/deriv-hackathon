@@ -158,3 +158,24 @@ class PublishToBlueskyView(APIView):
                 "success": False,
                 "error": str(e),
             }, status=500)
+
+
+class BlueskySearchView(APIView):
+    """
+    GET /api/content/bluesky-search/?q=EUR+USD&limit=10
+    Search Bluesky posts for social sentiment.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        query = request.query_params.get("q", "")
+        limit = int(request.query_params.get("limit", 10))
+        if not query:
+            return Response({"error": "q parameter is required"}, status=400)
+        try:
+            from .bluesky import BlueskyPublisher
+            publisher = BlueskyPublisher()
+            posts = publisher.search_posts(query, limit=limit)
+            return Response({"query": query, "posts": posts, "count": len(posts)})
+        except Exception as e:
+            return Response({"error": str(e), "posts": []}, status=500)

@@ -79,10 +79,10 @@ export default function ContentWorkbench({ className, personas: externalPersonas
   const isOverLimit = charCount > maxChars;
 
   return (
-    <div className={cn("space-y-4", className)}>
+    <div className={cn("space-y-5", className)}>
       {/* Input Section */}
-      <div className="bg-card border border-border rounded-sm p-4">
-        <h3 className="text-[10px] font-semibold tracking-wider text-muted uppercase mono-data mb-3">
+      <div className="bg-card border border-border rounded-md p-5">
+        <h3 className="text-xs font-semibold tracking-wider text-muted uppercase mono-data mb-4">
           CONTENT INPUT
         </h3>
 
@@ -93,20 +93,20 @@ export default function ContentWorkbench({ className, personas: externalPersonas
           placeholder="Enter a market insight or analysis to transform into social content..."
           rows={3}
           className={cn(
-            "w-full bg-surface border border-border rounded-sm px-3 py-2",
-            "text-[11px] text-white placeholder:text-muted-foreground mono-data",
+            "w-full bg-surface border border-border rounded-md px-4 py-3",
+            "text-sm text-white placeholder:text-muted-foreground mono-data",
             "focus:outline-none focus:border-muted resize-none",
             "transition-colors"
           )}
         />
 
         {/* Platform Selection */}
-        <div className="flex items-center gap-2 mt-3">
-          <span className="text-[9px] text-muted-foreground mono-data tracking-wider">PLATFORM:</span>
+        <div className="flex items-center gap-3 mt-4">
+          <span className="text-xs text-muted-foreground mono-data tracking-wider">PLATFORM:</span>
           <button
             onClick={() => setPlatform("bluesky_post")}
             className={cn(
-              "px-2 py-1 rounded-sm text-[10px] mono-data font-medium transition-colors",
+              "px-3 py-1.5 rounded-md text-xs mono-data font-medium transition-colors",
               platform === "bluesky_post"
                 ? "bg-accent text-white"
                 : "bg-surface text-muted hover:text-white"
@@ -117,7 +117,7 @@ export default function ContentWorkbench({ className, personas: externalPersonas
           <button
             onClick={() => setPlatform("bluesky_thread")}
             className={cn(
-              "px-2 py-1 rounded-sm text-[10px] mono-data font-medium transition-colors",
+              "px-3 py-1.5 rounded-md text-xs mono-data font-medium transition-colors",
               platform === "bluesky_thread"
                 ? "bg-accent text-white"
                 : "bg-surface text-muted hover:text-white"
@@ -128,30 +128,30 @@ export default function ContentWorkbench({ className, personas: externalPersonas
         </div>
 
         {/* Persona Selection */}
-        <div className="mt-3">
-          <span className="text-[9px] text-muted-foreground mono-data tracking-wider block mb-2">PERSONA:</span>
-          <div className="grid grid-cols-3 gap-2">
+        <div className="mt-4">
+          <span className="text-xs text-muted-foreground mono-data tracking-wider block mb-3">PERSONA:</span>
+          <div className="grid grid-cols-3 gap-3">
             {personas.map((persona) => (
               <button
                 key={persona.id}
                 onClick={() => setSelectedPersona(persona.id)}
                 className={cn(
-                  "p-2 rounded-sm border text-left transition-all",
+                  "p-3 rounded-md border text-left transition-all",
                   selectedPersona === persona.id
                     ? "border-accent bg-accent/10"
                     : "border-border hover:border-muted bg-surface"
                 )}
               >
-                <div className="flex items-center gap-1.5 mb-1">
-                  <span className="text-sm">{persona.icon}</span>
-                  <span className="text-[10px] text-white font-medium mono-data">{persona.name}</span>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-base">{persona.icon}</span>
+                  <span className="text-xs text-white font-medium mono-data">{persona.name}</span>
                 </div>
-                <p className="text-[9px] text-muted-foreground">{persona.style}</p>
+                <p className="text-[11px] text-muted-foreground">{persona.style}</p>
               </button>
             ))}
           </div>
           {personas.length === 0 && (
-            <div className="text-[10px] text-muted mono-data mt-2">
+            <div className="text-xs text-muted mono-data mt-3">
               No personas found in database. Create personas in Supabase first.
             </div>
           )}
@@ -162,7 +162,7 @@ export default function ContentWorkbench({ className, personas: externalPersonas
           onClick={handleGenerate}
           disabled={!insight.trim() || isGenerating || !selectedPersona}
           className={cn(
-            "w-full mt-3 py-2.5 rounded-sm text-[10px] font-semibold tracking-wider mono-data",
+            "w-full mt-4 py-3 rounded-md text-xs font-semibold tracking-wider mono-data",
             "transition-all duration-200",
             insight.trim() && !isGenerating && selectedPersona
               ? "bg-white text-black hover:bg-gray-200"
@@ -181,14 +181,14 @@ export default function ContentWorkbench({ className, personas: externalPersonas
 
       {/* Preview Section */}
       {(generatedContent || isGenerating) && (
-        <div className="bg-card border border-border rounded-sm p-4 animate-fade-in">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-[10px] font-semibold tracking-wider text-muted uppercase mono-data">
+        <div className="bg-card border border-border rounded-md p-5 animate-fade-in">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xs font-semibold tracking-wider text-muted uppercase mono-data">
               CONTENT PREVIEW
             </h3>
             <span
               className={cn(
-                "text-[9px] mono-data",
+                "text-xs mono-data",
                 isOverLimit ? "text-loss" : "text-muted-foreground"
               )}
             >
@@ -197,36 +197,36 @@ export default function ContentWorkbench({ className, personas: externalPersonas
           </div>
 
           {/* Bluesky Card Preview */}
-          <div className="bg-surface border border-border rounded-sm p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center">
-                <span className="text-xs">
+          <div className="bg-surface border border-border rounded-md p-5">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center">
+                <span className="text-base">
                   {personas.find((p) => p.id === selectedPersona)?.icon || "📊"}
                 </span>
               </div>
               <div>
-                <span className="text-[11px] text-white font-semibold block">
+                <span className="text-sm text-white font-semibold block">
                   TradeIQ {personas.find((p) => p.id === selectedPersona)?.name}
                 </span>
-                <span className="text-[9px] text-muted-foreground mono-data">
+                <span className="text-xs text-muted-foreground mono-data">
                   @tradeiq-analyst.bsky.social
                 </span>
               </div>
             </div>
-            <div className="text-[11px] text-muted leading-relaxed whitespace-pre-wrap mono-data">
+            <div className="text-sm text-muted leading-relaxed whitespace-pre-wrap mono-data">
               {generatedContent || (isGenerating && <LoadingDots className="py-2" />)}
             </div>
           </div>
 
           {/* Actions */}
-          <div className="flex items-center justify-between mt-3">
+          <div className="flex items-center justify-between mt-4">
             <DisclaimerBadge text="Content includes compliance disclaimer" />
-            <div className="flex gap-2">
+            <div className="flex gap-3">
               <button
                 onClick={() => {
                   navigator.clipboard.writeText(generatedContent);
                 }}
-                className="px-3 py-1.5 rounded-sm text-[10px] mono-data font-medium bg-surface border border-border text-muted hover:text-white transition-colors"
+                className="px-4 py-2 rounded-md text-xs mono-data font-medium bg-surface border border-border text-muted hover:text-white transition-colors"
               >
                 COPY
               </button>
@@ -234,7 +234,7 @@ export default function ContentWorkbench({ className, personas: externalPersonas
                 onClick={handlePublish}
                 disabled={!generatedContent || isPublishing}
                 className={cn(
-                  "px-3 py-1.5 rounded-sm text-[10px] mono-data font-medium transition-colors",
+                  "px-4 py-2 rounded-md text-xs mono-data font-medium transition-colors",
                   generatedContent && !isPublishing
                     ? "bg-accent text-white hover:bg-accent-dim"
                     : "bg-border text-muted-foreground cursor-not-allowed"
@@ -247,7 +247,7 @@ export default function ContentWorkbench({ className, personas: externalPersonas
 
           {publishResult && (
             <div className={cn(
-              "mt-2 p-2 rounded-sm text-[10px] mono-data text-center",
+              "mt-3 p-3 rounded-md text-xs mono-data text-center",
               publishResult.message.includes("success") ? "bg-profit/10 text-profit" : "bg-accent/10 text-accent"
             )}>
               <span>{publishResult.message}</span>
@@ -256,7 +256,7 @@ export default function ContentWorkbench({ className, personas: externalPersonas
                   href={publishResult.uri}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="block mt-1 text-accent underline hover:text-white transition-colors"
+                  className="block mt-1.5 text-accent underline hover:text-white transition-colors"
                 >
                   View on Bluesky &rarr;
                 </a>

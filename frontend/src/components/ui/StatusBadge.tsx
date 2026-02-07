@@ -29,7 +29,7 @@ export default function StatusBadge({ status, label, pulse, className }: StatusB
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-sm text-[9px] font-semibold tracking-wider mono-data border",
+        "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[11px] font-semibold tracking-wider mono-data border",
         colorMap[status],
         className
       )}

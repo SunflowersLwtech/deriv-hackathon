@@ -4,13 +4,24 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
-function buildUiErrorMessage(errorCode: string, expectedGoogleRedirectUri: string): string {
+function buildUiErrorMessage(
+  errorCode: string,
+  expectedGoogleRedirectUri: string,
+  errorDescription?: string | null
+): string {
   const normalizedError = errorCode.toLowerCase();
+  const normalizedDescription = (errorDescription ?? "").toLowerCase();
 
   if (normalizedError.includes("redirect_uri_mismatch")) {
     return `Google OAuth redirect URI mismatch. In Google Cloud Console, add this exact URI: ${expectedGoogleRedirectUri}`;
   }
   if (normalizedError.includes("callback_failed")) {
+    if (
+      normalizedDescription.includes("code verifier") ||
+      normalizedDescription.includes("invalid flow state")
+    ) {
+      return "OAuth callback failed: PKCE code verifier mismatch. Please access and complete login on the same host (use localhost only, not mixed with 127.0.0.1).";
+    }
     return "OAuth callback failed while exchanging the auth code. Please try signing in again.";
   }
   if (normalizedError.includes("missing_code")) {
@@ -29,6 +40,7 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [queryError, setQueryError] = useState<string | null>(null);
+  const [queryErrorDescription, setQueryErrorDescription] = useState<string | null>(null);
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
@@ -36,16 +48,39 @@ export default function LoginPage() {
       searchParams.get("error") ??
       searchParams.get("oauth_error") ??
       searchParams.get("oauth_error_description");
+    const nextErrorDescription = searchParams.get("oauth_error_description");
     setQueryError(nextQueryError);
+    setQueryErrorDescription(nextErrorDescription);
   }, []);
 
   const handleGoogleLogin = async () => {
     setIsLoading(true);
     setLocalError(null);
     try {
-      const redirectTo =
-        process.env.NEXT_PUBLIC_AUTH_CALLBACK_URL ??
-        `${window.location.origin}/auth/callback`;
+      const sameOriginCallback = `${window.location.origin}/auth/callback`;
+      const configuredCallback = process.env.NEXT_PUBLIC_AUTH_CALLBACK_URL?.trim();
+      let redirectTo = sameOriginCallback;
+
+      if (configuredCallback) {
+        try {
+          const parsed = new URL(configuredCallback);
+          if (parsed.origin === window.location.origin) {
+            redirectTo = parsed.toString();
+          } else {
+            console.warn(
+              "NEXT_PUBLIC_AUTH_CALLBACK_URL origin differs from current origin. Falling back to same-origin callback.",
+              {
+                configuredOrigin: parsed.origin,
+                currentOrigin: window.location.origin,
+              }
+            );
+          }
+        } catch {
+          console.warn(
+            "NEXT_PUBLIC_AUTH_CALLBACK_URL is invalid. Falling back to same-origin callback."
+          );
+        }
+      }
 
       // Supabase Google OAuth
       const { createClient } = await import("@/lib/supabase/client");
@@ -83,7 +118,7 @@ export default function LoginPage() {
     : "https://<your-project-ref>.supabase.co/auth/v1/callback";
   const errorMessage = localError ?? queryError;
   const uiErrorMessage = errorMessage
-    ? buildUiErrorMessage(errorMessage, expectedGoogleRedirectUri)
+    ? buildUiErrorMessage(errorMessage, expectedGoogleRedirectUri, queryErrorDescription)
     : null;
 
   return (
@@ -100,9 +135,13 @@ export default function LoginPage() {
           <Link href="/" className="inline-block">
             <div className="flex items-center justify-center gap-3">
               <div className="relative">
-                <div className="w-12 h-12 bg-gradient-to-br from-profit to-cyan rounded-sm flex items-center justify-center">
-                  <span className="text-black font-bold text-lg mono-data">TQ</span>
-                </div>
+                <img
+                  src="/tradeiq_favicon.svg"
+                  alt="TradeIQ"
+                  width={48}
+                  height={48}
+                  className="rounded-sm"
+                />
                 <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-profit animate-pulse" />
               </div>
               <div className="text-left">

@@ -317,6 +317,34 @@ def _search_newsapi(query: str, limit: int) -> List[Dict[str, Any]]:
         return []
 
 
+def fetch_top_headlines(category: str = "business", country: str = "us", limit: int = 10) -> List[Dict[str, Any]]:
+    """Fetch top headlines from NewsAPI /v2/top-headlines."""
+    api_key = os.environ.get("NEWS_API_KEY", "")
+    if not api_key:
+        return []
+    try:
+        response = requests.get(
+            "https://newsapi.org/v2/top-headlines",
+            params={"category": category, "country": country, "apiKey": api_key, "pageSize": limit},
+            timeout=5,
+        )
+        if response.status_code != 200:
+            return []
+        return [
+            {
+                "title": a.get("title", ""),
+                "description": a.get("description", ""),
+                "url": a.get("url", ""),
+                "publishedAt": a.get("publishedAt", ""),
+                "source": a.get("source", {}).get("name", ""),
+            }
+            for a in response.json().get("articles", [])[:limit]
+        ]
+    except Exception as e:
+        print(f"NewsAPI headlines error: {e}")
+        return []
+
+
 def _finnhub_category_for_query(query: str) -> str:
     q = query.lower()
     if any(token in q for token in ["eur", "gbp", "usd", "jpy", "forex", "xau"]):
@@ -526,9 +554,6 @@ def get_sentiment(instrument: str) -> Dict[str, Any]:
             "sources": []
         }
 
-    # Use DeepSeek to analyze sentiment
-    llm = get_llm_client()
-
     news_summary = "\n".join([
         f"- {article['title']}: {article.get('description', '')[:100]}"
         for article in news[:5]
@@ -548,6 +573,7 @@ Return a JSON object with:
 }}"""
 
     try:
+        llm = get_llm_client()
         response = llm.simple_chat(
             system_prompt=SYSTEM_PROMPT_MARKET,
             user_message=prompt,
@@ -588,8 +614,6 @@ def explain_market_move(instrument: str, move_description: str) -> Dict[str, Any
     Returns:
         Explanation with sources
     """
-    llm = get_llm_client()
-
     # Gather data
     price_data = fetch_price_data(instrument)
     news = search_news(instrument, limit=5)
@@ -621,6 +645,7 @@ RULES:
 Generate a clear, factual explanation (2-3 sentences max)."""
 
     try:
+        llm = get_llm_client()
         explanation = llm.simple_chat(
             system_prompt=SYSTEM_PROMPT_MARKET,
             user_message=prompt,
@@ -644,7 +669,10 @@ Generate a clear, factual explanation (2-3 sentences max)."""
         return {
             "instrument": instrument,
             "move": move_description,
-            "explanation": "Unable to generate explanation at this time.",
+            "explanation": (
+                f"Latest move context for {instrument}: {price_context}. "
+                "AI-generated explanation is temporarily unavailable."
+            ),
             "sources": {},
             "error": str(e)
         }
@@ -699,9 +727,6 @@ def generate_market_brief(instruments: List[str] = None) -> Dict[str, Any]:
             "source": price.get("source", "deriv"),
         })
 
-    # Generate AI summary
-    llm = get_llm_client()
-
     data_summary = "\n".join([
         f"- {d['symbol']}: {d['price'] or 'N/A'}"
         for d in instrument_data
@@ -719,6 +744,7 @@ RULES:
 """
 
     try:
+        llm = get_llm_client()
         summary = llm.simple_chat(
             system_prompt=SYSTEM_PROMPT_MARKET,
             user_message=prompt,
@@ -732,8 +758,194 @@ RULES:
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
+        summary_items = []
+        for item in instrument_data:
+            price = item.get("price")
+            change_pct = item.get("change_percent")
+            if change_pct is None:
+                summary_items.append(f"{item['symbol']}: {price if price is not None else 'N/A'}")
+            else:
+                summary_items.append(
+                    f"{item['symbol']}: {price if price is not None else 'N/A'} ({change_pct:+.2f}%)"
+                )
+
         return {
-            "summary": f"Market brief generation error: {str(e)}",
+            "summary": (
+                "AI market brief is temporarily unavailable. "
+                f"Latest snapshot: {'; '.join(summary_items)}. "
+                "This is analysis, not financial advice."
+            ),
             "instruments": instrument_data,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "error": str(e),
         }
+
+
+# ─── Finnhub Economic Calendar & Pattern Scan ───────────────────────
+
+def fetch_economic_calendar() -> Dict[str, Any]:
+    """
+    Fetch economic calendar from Finnhub.
+    Returns upcoming and recent economic events (Non-Farm Payrolls, CPI, etc.).
+    """
+    api_key = os.environ.get("FINNHUB_API_KEY", "")
+    if not api_key:
+        return {"events": [], "error": "FINNHUB_API_KEY not configured"}
+
+    from datetime import timedelta
+    today = datetime.now(tz=timezone.utc)
+    from_date = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+    to_date = (today + timedelta(days=7)).strftime("%Y-%m-%d")
+
+    try:
+        response = requests.get(
+            "https://finnhub.io/api/v1/calendar/economic",
+            params={"from": from_date, "to": to_date, "token": api_key},
+            timeout=8,
+        )
+        if response.status_code != 200:
+            return {"events": [], "error": f"Finnhub HTTP {response.status_code}"}
+
+        data = response.json()
+        raw_events = data.get("economicCalendar", [])
+        if not raw_events:
+            raw_events = data.get("result", [])
+
+        events = []
+        for ev in raw_events[:30]:
+            events.append({
+                "country": ev.get("country", ""),
+                "event": ev.get("event", ""),
+                "impact": ev.get("impact", ""),
+                "date": ev.get("date", ""),
+                "time": ev.get("time", ""),
+                "actual": ev.get("actual"),
+                "estimate": ev.get("estimate"),
+                "prev": ev.get("prev"),
+                "unit": ev.get("unit", ""),
+            })
+
+        return {
+            "events": events,
+            "from_date": from_date,
+            "to_date": to_date,
+            "count": len(events),
+            "source": "finnhub",
+        }
+    except Exception as e:
+        return {"events": [], "error": str(e)}
+
+
+def fetch_finnhub_quote(instrument: str) -> Dict[str, Any]:
+    """
+    Fetch real-time quote from Finnhub as fallback for Deriv.
+    Maps instruments to Finnhub OANDA format.
+    """
+    api_key = os.environ.get("FINNHUB_API_KEY", "")
+    if not api_key:
+        return {}
+
+    # Map to Finnhub forex symbol format
+    finnhub_map = {
+        "EUR/USD": "OANDA:EUR_USD", "GBP/USD": "OANDA:GBP_USD",
+        "USD/JPY": "OANDA:USD_JPY", "AUD/USD": "OANDA:AUD_USD",
+        "USD/CHF": "OANDA:USD_CHF", "GOLD": "OANDA:XAU_USD",
+        "XAU/USD": "OANDA:XAU_USD",
+    }
+    symbol = finnhub_map.get(instrument)
+    if not symbol:
+        return {}
+
+    try:
+        response = requests.get(
+            "https://finnhub.io/api/v1/quote",
+            params={"symbol": symbol, "token": api_key},
+            timeout=5,
+        )
+        if response.status_code != 200:
+            return {}
+        data = response.json()
+        return {
+            "instrument": instrument,
+            "price": data.get("c"),
+            "open": data.get("o"),
+            "high": data.get("h"),
+            "low": data.get("l"),
+            "prev_close": data.get("pc"),
+            "change": data.get("d"),
+            "change_percent": data.get("dp"),
+            "source": "finnhub",
+        }
+    except Exception:
+        return {}
+
+
+def fetch_pattern_recognition(instrument: str, resolution: str = "60") -> Dict[str, Any]:
+    """
+    Fetch technical pattern recognition from Finnhub.
+    Detects head-and-shoulders, triangles, double tops/bottoms, etc.
+    """
+    api_key = os.environ.get("FINNHUB_API_KEY", "")
+    if not api_key:
+        return {"patterns": [], "error": "FINNHUB_API_KEY not configured"}
+
+    finnhub_map = {
+        "EUR/USD": "OANDA:EUR_USD", "GBP/USD": "OANDA:GBP_USD",
+        "USD/JPY": "OANDA:USD_JPY", "AUD/USD": "OANDA:AUD_USD",
+        "GOLD": "OANDA:XAU_USD", "XAU/USD": "OANDA:XAU_USD",
+    }
+    symbol = finnhub_map.get(instrument)
+    if not symbol:
+        return {"patterns": [], "note": f"No Finnhub mapping for {instrument}"}
+
+    try:
+        response = requests.get(
+            "https://finnhub.io/api/v1/scan/pattern",
+            params={"symbol": symbol, "resolution": resolution, "token": api_key},
+            timeout=8,
+        )
+        if response.status_code != 200:
+            return {"patterns": []}
+        data = response.json()
+        patterns = data.get("points", [])
+        return {
+            "instrument": instrument,
+            "patterns": patterns[:5],
+            "count": len(patterns),
+            "source": "finnhub",
+        }
+    except Exception as e:
+        return {"patterns": [], "error": str(e)}
+
+
+# ─── Deriv Active Symbols ────────────────────────────────────────────
+
+def fetch_active_symbols() -> List[Dict[str, Any]]:
+    """
+    Fetch all available trading instruments from Deriv API.
+    Returns categorized list with display names.
+    """
+    try:
+        from behavior.deriv_client import get_deriv_client
+        client = get_deriv_client()
+        symbols = client.fetch_active_symbols()
+
+        categorized = []
+        for s in symbols:
+            categorized.append({
+                "symbol": s.get("symbol", ""),
+                "display_name": s.get("display_name", ""),
+                "market": s.get("market", ""),
+                "market_display_name": s.get("market_display_name", ""),
+                "submarket": s.get("submarket", ""),
+                "submarket_display_name": s.get("submarket_display_name", ""),
+                "is_trading_suspended": s.get("is_trading_suspended", 0),
+                "pip": s.get("pip"),
+            })
+        return categorized
+    except Exception as e:
+        # Fallback to hardcoded list
+        return [
+            {"symbol": k, "display_name": k, "market": "forex", "deriv_symbol": v}
+            for k, v in DERIV_SYMBOLS.items()
+        ]

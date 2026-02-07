@@ -36,11 +36,25 @@ export default function AuthCallbackPage() {
         const { createClient } = await import("@/lib/supabase/client");
         const supabase = createClient();
 
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
         if (error) {
+          const { data: sessionData } = await supabase.auth.getSession();
+          if (sessionData?.session) {
+            router.replace("/");
+            return;
+          }
+
           console.error("Auth callback error:", error);
           redirectToLogin("callback_failed", error.message);
           return;
+        }
+
+        if (!data?.session) {
+          const { data: sessionData } = await supabase.auth.getSession();
+          if (!sessionData?.session) {
+            redirectToLogin("callback_failed", "Session not found after code exchange");
+            return;
+          }
         }
 
         router.replace("/");
@@ -59,9 +73,13 @@ export default function AuthCallbackPage() {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center">
       <div className="text-center">
-        <div className="w-12 h-12 bg-gradient-to-br from-profit to-cyan rounded-sm flex items-center justify-center mx-auto mb-4">
-          <span className="text-black font-bold text-lg mono-data">TQ</span>
-        </div>
+        <img
+          src="/tradeiq_favicon.svg"
+          alt="TradeIQ"
+          width={48}
+          height={48}
+          className="rounded-sm mx-auto mb-4"
+        />
         <div className="flex items-center gap-2 justify-center">
           {[0, 1, 2].map((i) => (
             <div

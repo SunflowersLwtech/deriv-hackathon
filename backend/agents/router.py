@@ -33,8 +33,6 @@ def route_query(
     Returns:
         Response dict with answer and tools used
     """
-    llm = get_llm_client()
-    
     # Select tools and system prompt based on agent type
     if agent_type == "market":
         tools = get_market_tools()
@@ -61,6 +59,8 @@ def route_query(
         query = f"Context:\n{context_str}\n\nQuery: {query}"
     
     try:
+        llm = get_llm_client()
+
         # Call DeepSeek with tools
         response = llm.chat_with_tools(
             system_prompt=system_prompt,
@@ -139,11 +139,26 @@ def route_query(
         }
         
     except Exception as e:
+        error_text = str(e)
+        is_llm_config_error = (
+            "DEEPSEEK_API_KEY" in error_text
+            and "OPENROUTER_API_KEY" in error_text
+        )
+
+        if is_llm_config_error:
+            fallback_response = (
+                "TradeIQ analysis engine is currently unavailable because no LLM provider "
+                "API key is configured. Set DEEPSEEK_API_KEY or OPENROUTER_API_KEY and retry. "
+                "This is analysis, not financial advice."
+            )
+        else:
+            fallback_response = f"Error processing query: {error_text}"
+
         return {
-            "response": f"Error processing query: {str(e)}",
+            "response": fallback_response,
             "source": "router",
             "tools_used": [],
-            "error": str(e)
+            "error": error_text,
         }
 
 

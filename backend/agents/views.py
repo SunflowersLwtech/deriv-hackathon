@@ -1,7 +1,7 @@
 """
 Agent Query REST API Endpoint
 Exposes the DeepSeek function-calling router via HTTP
-+ Agent Team pipeline endpoints
++ Agent Team pipeline endpoints (5-agent architecture)
 """
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -14,8 +14,10 @@ from .agent_team import (
     analyst_analyze,
     portfolio_advisor_interpret,
     content_creator_generate,
+    behavioral_sentinel_analyze,
     VolatilityEvent,
     AnalysisReport,
+    BehavioralSentinelInsight,
 )
 from dataclasses import asdict
 import json
@@ -71,6 +73,7 @@ class AgentChatView(APIView):
         message = request.data.get("message", "")
         agent_type = request.data.get("agent_type", "auto")
         user_id = request.data.get("user_id")
+        history = request.data.get("history", [])
 
         if not message:
             return Response(
@@ -88,10 +91,16 @@ class AgentChatView(APIView):
             else:
                 agent_type = "market"
 
+        # Build context from conversation history
+        context = {}
+        if history:
+            context["conversation_history"] = history[-6:]
+
         result = route_query(
             query=message,
             agent_type=agent_type,
             user_id=user_id,
+            context=context if context else None,
         )
 
         return Response({
@@ -107,19 +116,20 @@ class AgentChatView(APIView):
 class AgentTeamPipelineView(APIView):
     """
     POST /api/agents/pipeline/
-    Run the full 4-agent pipeline:
-      Monitor → Analyst → Advisor → Content Creator
+    Run the full 5-agent pipeline:
+      Monitor -> Analyst -> Advisor -> Sentinel -> Content Creator
 
     Body:
     {
-        "instruments": ["BTC/USD"],        // optional – defaults to major pairs
-        "custom_event": {                  // optional – manual trigger
+        "instruments": ["BTC/USD"],        // optional - defaults to major pairs
+        "custom_event": {                  // optional - manual trigger
             "instrument": "BTC/USD",
             "price": 97500,
             "change_pct": 5.2
         },
-        "user_portfolio": [...],           // optional – user positions
-        "skip_content": false              // optional – skip tweet generation
+        "user_portfolio": [...],           // optional - user positions
+        "skip_content": false,             // optional - skip tweet generation
+        "user_id": "uuid"                  // optional - enables Behavioral Sentinel
     }
     """
     permission_classes = [AllowAny]
@@ -129,12 +139,14 @@ class AgentTeamPipelineView(APIView):
         custom_event = request.data.get("custom_event")
         user_portfolio = request.data.get("user_portfolio")
         skip_content = request.data.get("skip_content", False)
+        user_id = request.data.get("user_id")
 
         result = run_pipeline(
             instruments=instruments,
             custom_event=custom_event,
             user_portfolio=user_portfolio,
             skip_content=skip_content,
+            user_id=user_id,
         )
         return Response(asdict(result))
 
@@ -143,12 +155,6 @@ class AgentMonitorView(APIView):
     """
     POST /api/agents/monitor/
     Run only the Market Monitor agent.
-
-    Body:
-    {
-        "instruments": ["EUR/USD", "BTC/USD"],
-        "custom_event": null
-    }
     """
     permission_classes = [AllowAny]
 
@@ -170,15 +176,6 @@ class AgentAnalystView(APIView):
     """
     POST /api/agents/analyst/
     Run only the Analyst agent on a given event.
-
-    Body:
-    {
-        "instrument": "BTC/USD",
-        "current_price": 97500,
-        "price_change_pct": 5.2,
-        "direction": "spike",
-        "magnitude": "high"
-    }
     """
     permission_classes = [AllowAny]
 
@@ -204,12 +201,6 @@ class AgentAdvisorView(APIView):
     """
     POST /api/agents/advisor/
     Run only the Portfolio Advisor agent.
-
-    Body:
-    {
-        "analysis_report": { ... },   // AnalysisReport fields
-        "user_portfolio": [ ... ]     // optional
-    }
     """
     permission_classes = [AllowAny]
 
@@ -236,16 +227,64 @@ class AgentAdvisorView(APIView):
             )
 
 
+class AgentSentinelView(APIView):
+    """
+    POST /api/agents/sentinel/
+    Run only the Behavioral Sentinel agent.
+
+    Fuses a market event with user behavioral history to produce
+    a personalised warning: "The market did X, and you tend to Y."
+
+    Body:
+    {
+        "instrument": "BTC/USD",
+        "price_change_pct": 5.2,
+        "direction": "spike",
+        "event_summary": "BTC surged 5.2%...",
+        "user_id": "d1000000-0000-0000-0000-000000000001"
+    }
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        instrument = request.data.get("instrument", "BTC/USD")
+        price_change_pct = float(request.data.get("price_change_pct", 0.0))
+        direction = request.data.get("direction", "spike")
+        event_summary = request.data.get("event_summary", "")
+        user_id = request.data.get("user_id", "d1000000-0000-0000-0000-000000000001")
+
+        try:
+            event = VolatilityEvent(
+                instrument=instrument,
+                current_price=request.data.get("current_price"),
+                price_change_pct=price_change_pct,
+                direction=direction,
+                magnitude="high" if abs(price_change_pct) >= 3.0 else "medium",
+            )
+
+            report = AnalysisReport(
+                instrument=instrument,
+                event_summary=event_summary or f"{instrument} moved {price_change_pct:+.2f}%",
+                root_causes=request.data.get("root_causes", []),
+                news_sources=[],
+                sentiment=request.data.get("sentiment", "neutral"),
+                sentiment_score=float(request.data.get("sentiment_score", 0.0)),
+                key_data_points=[],
+            )
+
+            sentinel = behavioral_sentinel_analyze(event, report, user_id)
+            return Response(asdict(sentinel))
+        except Exception as exc:
+            return Response(
+                {"error": str(exc)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
 class AgentContentView(APIView):
     """
     POST /api/agents/content-gen/
     Run only the Content Creator agent.
-
-    Body:
-    {
-        "analysis_report": { ... },
-        "personalized_insight": { ... }  // optional
-    }
     """
     permission_classes = [AllowAny]
 

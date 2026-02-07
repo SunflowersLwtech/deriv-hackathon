@@ -1,5 +1,6 @@
 # ─── TradeIQ Frontend ──────────────────────────────────────
-# Next.js 16 Standalone Build
+# Next.js 16 Standalone Build (for Docker / Railway / Render)
+# For Vercel deployment, use vercel.json instead (no Docker needed)
 # ───────────────────────────────────────────────────────────
 
 # --- Stage 1: Install deps ---
@@ -27,6 +28,8 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
     NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY \
     NEXT_PUBLIC_AUTH_CALLBACK_URL=$NEXT_PUBLIC_AUTH_CALLBACK_URL
 
+# Force standalone output for Docker
+ENV NEXT_OUTPUT=standalone
 RUN npm run build
 
 # --- Stage 3: Production ---

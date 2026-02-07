@@ -57,6 +57,9 @@ export default function BehaviorPage() {
   const [scenarioAnalysis, setScenarioAnalysis] = useState<ScenarioAnalysis | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [scenarios, setScenarios] = useState<DemoScenario[]>([]);
+  const [isSyncingDeriv, setIsSyncingDeriv] = useState(false);
+  const [derivSyncResult, setDerivSyncResult] = useState<{ trades_synced: number; total_trades: number } | null>(null);
+  const [derivSyncError, setDerivSyncError] = useState<string | null>(null);
 
   const { data: trades, isUsingMock: tradesIsMock, isBackendOnline, refetch: refetchTrades } = useTrades();
   const { data: patterns, isUsingMock: patternsIsMock, refetch: refetchPatterns } = useBehaviorPatterns();
@@ -110,16 +113,34 @@ export default function BehaviorPage() {
     setIsLoadingScenario(false);
   };
 
+  const handleSyncDeriv = async () => {
+    setIsSyncingDeriv(true);
+    setDerivSyncResult(null);
+    setDerivSyncError(null);
+    try {
+      const result = await api.syncDerivTrades(undefined, 30);
+      setDerivSyncResult({
+        trades_synced: result.trades_synced,
+        total_trades: result.total_trades,
+      });
+      // Refresh trade data
+      await Promise.all([refetchTrades(), refetchPatterns(), refetchStats()]);
+    } catch {
+      setDerivSyncError("Deriv sync failed. Check DERIV_TOKEN in backend .env.");
+    }
+    setIsSyncingDeriv(false);
+  };
+
   const isAnyMock = tradesIsMock || patternsIsMock || statsIsMock;
 
   return (
     <AppShell>
-      <div className="p-6 md:p-8 space-y-6">
+      <div className="p-6 md:p-10 space-y-8">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold text-white tracking-tight">Behavioral Coach</h1>
-            <p className="text-xs text-muted mono-data mt-1">
+            <h1 className="text-2xl font-bold text-white tracking-tight">Behavioral Coach</h1>
+            <p className="text-sm text-muted mono-data mt-2">
               AI-powered trading behavior analysis and pattern detection
             </p>
           </div>
@@ -127,7 +148,7 @@ export default function BehaviorPage() {
         </div>
 
         {/* Session Health Overview */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-5">
           <DataCard title="Session Score" value={`${stats.sessionScore}/100`} subtitle={stats.sessionScore > 70 ? "Good" : stats.sessionScore > 40 ? "Needs improvement" : "Poor"} trend={stats.sessionScore > 50 ? "up" : "down"} glow />
           <DataCard title="Trades Today" value={String(stats.tradesToday)} subtitle={stats.tradesToday > 10 ? "Above average" : "Normal"} trend={stats.tradesToday > 10 ? "down" : "up"} />
           <DataCard title="Win Rate" value={`${stats.winRate}%`} subtitle={stats.winRate < 50 ? `Below baseline 55%` : "Above baseline"} trend={stats.winRate >= 50 ? "up" : "down"} />
@@ -142,8 +163,8 @@ export default function BehaviorPage() {
         </div>
 
         {/* Demo Scenario Loader */}
-        <div className="bg-card border border-border rounded-sm p-5">
-          <h3 className="text-xs font-semibold tracking-wider text-muted uppercase mono-data mb-4">
+        <div className="bg-card border border-border rounded-md p-6">
+          <h3 className="text-sm font-semibold tracking-wider text-muted uppercase mono-data mb-5">
             LOAD DEMO SCENARIO
           </h3>
           <div className="flex flex-wrap gap-3">
@@ -153,15 +174,15 @@ export default function BehaviorPage() {
                 onClick={() => handleLoadScenario(s.id)}
                 disabled={isLoadingScenario}
                 className={cn(
-                  "flex items-center gap-2.5 px-4 py-2.5 rounded-sm border text-left transition-all",
+                  "flex items-center gap-3 px-5 py-3 rounded-md border text-left transition-all",
                   activeScenario === s.id
                     ? "border-accent bg-accent/10 text-white"
                     : "border-border bg-surface text-muted hover:text-white hover:border-muted",
                   isLoadingScenario && "opacity-50 cursor-not-allowed"
                 )}
               >
-                <span className="text-lg">{s.icon}</span>
-                <span className="text-xs font-medium mono-data tracking-wider">{s.label}</span>
+                <span className="text-xl">{s.icon}</span>
+                <span className="text-sm font-medium mono-data tracking-wider">{s.label}</span>
               </button>
             ))}
             {scenarios.length === 0 && (
@@ -173,6 +194,40 @@ export default function BehaviorPage() {
           {isLoadingScenario && (
             <div className="mt-3 text-xs text-muted mono-data animate-pulse">Loading scenario from backend...</div>
           )}
+        </div>
+
+        {/* Deriv Real Trade Sync */}
+        <div className="bg-card border border-border rounded-sm p-5">
+          <h3 className="text-xs font-semibold tracking-wider text-muted uppercase mono-data mb-4">
+            SYNC REAL TRADES FROM DERIV
+          </h3>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={handleSyncDeriv}
+              disabled={isSyncingDeriv}
+              className={cn(
+                "flex items-center gap-2 px-5 py-2.5 rounded-sm border text-left transition-all",
+                "border-cyan/50 bg-cyan/10 text-white hover:bg-cyan/20",
+                isSyncingDeriv && "opacity-50 cursor-not-allowed"
+              )}
+            >
+              <span className="text-lg">🔗</span>
+              <span className="text-xs font-medium mono-data tracking-wider">
+                {isSyncingDeriv ? "SYNCING..." : "SYNC FROM DERIV API"}
+              </span>
+            </button>
+            {derivSyncResult && (
+              <span className="text-xs text-profit mono-data">
+                {derivSyncResult.trades_synced} trades synced ({derivSyncResult.total_trades} total)
+              </span>
+            )}
+            {derivSyncError && (
+              <span className="text-xs text-loss mono-data">{derivSyncError}</span>
+            )}
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-2 mono-data">
+            Pulls real trade history from your Deriv account using DERIV_TOKEN
+          </p>
         </div>
 
         {/* AI Scenario Analysis Results */}
@@ -262,10 +317,10 @@ export default function BehaviorPage() {
         )}
 
         {/* Pattern Detection Timeline */}
-        <div className="bg-card border border-border rounded-sm p-5">
-          <div className="flex items-center justify-between mb-5">
+        <div className="bg-card border border-border rounded-md p-6">
+          <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
-              <h3 className="text-xs font-semibold tracking-wider text-muted uppercase mono-data">
+              <h3 className="text-sm font-semibold tracking-wider text-muted uppercase mono-data">
                 PATTERN DETECTION TIMELINE
               </h3>
               <DataSourceBadge isUsingMock={patternsIsMock} />
@@ -279,9 +334,9 @@ export default function BehaviorPage() {
 
           <div className="relative">
             <div className="absolute left-[7px] top-0 bottom-0 w-px bg-border" />
-            <div className="space-y-5">
+            <div className="space-y-6">
               {patterns.map((pattern, i) => (
-                <div key={pattern.id} className="relative pl-7 animate-fade-in" style={{ animationDelay: `${i * 100}ms` }}>
+                <div key={pattern.id} className="relative pl-8 animate-fade-in" style={{ animationDelay: `${i * 100}ms` }}>
                   <div className={cn(
                     "absolute left-0 top-2 w-4 h-4 rounded-full border-2 bg-card z-10",
                     pattern.severity === "critical" && "border-loss",
@@ -310,16 +365,16 @@ export default function BehaviorPage() {
         </div>
 
         {/* Trade Log */}
-        <div className="bg-card border border-border rounded-sm">
-          <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
-            <h3 className="text-xs font-semibold tracking-wider text-muted uppercase mono-data">
+        <div className="bg-card border border-border rounded-md">
+          <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+            <h3 className="text-sm font-semibold tracking-wider text-muted uppercase mono-data">
               RECENT TRADES
             </h3>
             <DataSourceBadge isUsingMock={tradesIsMock} />
           </div>
           <div className="divide-y divide-border/30">
             {trades.map((trade) => (
-              <div key={trade.id} className="grid grid-cols-12 gap-3 px-5 py-3 items-center text-xs mono-data">
+              <div key={trade.id} className="grid grid-cols-12 gap-3 px-6 py-3.5 items-center text-sm mono-data">
                 <div className="col-span-2 text-muted-foreground">{trade.time}</div>
                 <div className="col-span-3 text-white">{trade.instrument}</div>
                 <div className={cn("col-span-2", trade.direction === "BUY" ? "text-profit" : "text-loss")}>{trade.direction}</div>

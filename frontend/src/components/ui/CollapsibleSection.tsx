@@ -23,24 +23,24 @@ export default function CollapsibleSection({
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
   return (
-    <div className={cn("border border-border rounded-sm overflow-hidden", className)}>
+    <div className={cn("border border-border rounded-md overflow-hidden", className)}>
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          "w-full flex items-center justify-between px-3 py-2 hover:bg-surface transition-colors",
+          "w-full flex items-center justify-between px-4 py-3 hover:bg-surface transition-colors",
           headerClassName
         )}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <span
             className={cn(
-              "text-[10px] mono-data text-muted transition-transform duration-200",
+              "text-xs mono-data text-muted transition-transform duration-200",
               isOpen && "rotate-90"
             )}
           >
             ▶
           </span>
-          <span className="text-[10px] font-semibold tracking-wider text-muted uppercase mono-data">
+          <span className="text-xs font-semibold tracking-wider text-muted uppercase mono-data">
             {title}
           </span>
         </div>

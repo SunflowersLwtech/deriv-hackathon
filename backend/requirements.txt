@@ -22,6 +22,10 @@ openai>=1.0.0,<2.0.0  # For DeepSeek API (OpenAI-compatible)
 atproto>=0.0.18,<1.0.0  # Bluesky AT Protocol
 requests>=2.31.0,<3.0.0  # For NewsAPI and external APIs
 
+# Cache & Channel Layer (Upstash Redis)
+redis[hiredis]>=5.0,<6.0
+channels-redis>=4.1,<5.0
+
 # Utilities
 python-dotenv>=1.0,<2.0
 

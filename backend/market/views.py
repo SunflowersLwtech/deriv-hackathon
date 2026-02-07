@@ -121,3 +121,49 @@ class MarketSentimentView(APIView):
         if not instrument:
             return Response({"error": "instrument is required"}, status=400)
         return Response(get_sentiment(instrument))
+
+
+class EconomicCalendarView(APIView):
+    """GET /api/market/calendar/ — Finnhub economic calendar."""
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from .tools import fetch_economic_calendar
+        return Response(fetch_economic_calendar())
+
+
+class TopHeadlinesView(APIView):
+    """GET /api/market/headlines/ — NewsAPI top business headlines."""
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from .tools import fetch_top_headlines
+        category = request.query_params.get("category", "business")
+        limit = int(request.query_params.get("limit", 10))
+        return Response({"headlines": fetch_top_headlines(category=category, limit=limit)})
+
+
+class ActiveSymbolsView(APIView):
+    """GET /api/market/instruments/ — All available Deriv trading instruments."""
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from .tools import fetch_active_symbols
+        market_filter = request.query_params.get("market")
+        symbols = fetch_active_symbols()
+        if market_filter:
+            symbols = [s for s in symbols if s.get("market") == market_filter]
+        return Response({"instruments": symbols, "count": len(symbols)})
+
+
+class PatternRecognitionView(APIView):
+    """POST /api/market/patterns/ — Finnhub technical pattern recognition."""
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        from .tools import fetch_pattern_recognition
+        instrument = request.data.get("instrument", "")
+        if not instrument:
+            return Response({"error": "instrument is required"}, status=400)
+        resolution = request.data.get("resolution", "60")
+        return Response(fetch_pattern_recognition(instrument, resolution))

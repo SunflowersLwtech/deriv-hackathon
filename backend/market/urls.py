@@ -8,6 +8,10 @@ from .views import (
     PriceHistoryView,
     MarketTechnicalsView,
     MarketSentimentView,
+    EconomicCalendarView,
+    TopHeadlinesView,
+    ActiveSymbolsView,
+    PatternRecognitionView,
 )
 
 router = DefaultRouter()
@@ -21,4 +25,8 @@ urlpatterns = [
     path("history/", PriceHistoryView.as_view(), name="market-history"),
     path("technicals/", MarketTechnicalsView.as_view(), name="market-technicals"),
     path("sentiment/", MarketSentimentView.as_view(), name="market-sentiment"),
+    path("calendar/", EconomicCalendarView.as_view(), name="market-calendar"),
+    path("headlines/", TopHeadlinesView.as_view(), name="market-headlines"),
+    path("instruments/", ActiveSymbolsView.as_view(), name="market-instruments"),
+    path("patterns/", PatternRecognitionView.as_view(), name="market-patterns"),
 ]

@@ -307,6 +307,42 @@ class WowMomentView(APIView):
         except Exception as e:
             results["behavior_insight"] = f"Behavioral analysis error: {str(e)}"
 
+        # 2.5 Behavioral Sentinel Fusion (market + behavior cross-analysis)
+        try:
+            from agents.agent_team import (
+                behavioral_sentinel_analyze,
+                VolatilityEvent,
+                AnalysisReport,
+            )
+            from dataclasses import asdict
+
+            # Build lightweight event from market analysis
+            sentinel_event = VolatilityEvent(
+                instrument=instrument,
+                current_price=None,
+                price_change_pct=0.0,
+                direction="spike",
+                magnitude="medium",
+            )
+            sentinel_report = AnalysisReport(
+                instrument=instrument,
+                event_summary=results.get("market_analysis", "")[:200],
+                root_causes=[],
+                news_sources=[],
+                sentiment="neutral",
+                sentiment_score=0.0,
+                key_data_points=[],
+            )
+            sentinel = behavioral_sentinel_analyze(sentinel_event, sentinel_report, user_id)
+            results["sentinel_fusion"] = {
+                "personalized_warning": sentinel.personalized_warning,
+                "behavioral_context": sentinel.behavioral_context,
+                "risk_level": sentinel.risk_level,
+                "historical_pattern_match": sentinel.historical_pattern_match,
+            }
+        except Exception as e:
+            results["sentinel_fusion"] = f"Sentinel fusion error: {str(e)}"
+
         # 3. Content Preview
         try:
             from content.tools import generate_draft
@@ -324,6 +360,35 @@ class WowMomentView(APIView):
                 results["content_preview"] = "No persona configured for content generation."
         except Exception as e:
             results["content_preview"] = f"Content generation error: {str(e)}"
+
+        # 4. Economic Calendar (Finnhub)
+        try:
+            from market.tools import fetch_economic_calendar
+            calendar = fetch_economic_calendar()
+            high_impact = [
+                ev for ev in calendar.get("events", [])
+                if ev.get("impact") in ("high", "3", 3)
+            ][:5]
+            results["economic_calendar"] = {
+                "high_impact_events": high_impact,
+                "total_events": calendar.get("count", 0),
+            }
+        except Exception as e:
+            results["economic_calendar"] = f"Calendar error: {str(e)}"
+
+        # 5. Bluesky Social Sentiment
+        try:
+            from content.bluesky import BlueskyPublisher
+            publisher = BlueskyPublisher()
+            social_posts = publisher.search_posts(instrument.replace("/", " "), limit=5)
+            results["social_sentiment"] = {
+                "platform": "bluesky",
+                "query": instrument,
+                "posts": social_posts[:3],
+                "total_found": len(social_posts),
+            }
+        except Exception as e:
+            results["social_sentiment"] = f"Social search error: {str(e)}"
 
         results["disclaimer"] = "This is analysis, not financial advice. All data is for educational purposes."
 

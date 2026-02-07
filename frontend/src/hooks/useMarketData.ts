@@ -198,3 +198,33 @@ export function useInstrumentUniverse() {
     pollInterval: 60000,
   });
 }
+
+// ─── New hooks for Finnhub / Deriv / NewsAPI ───────────────────────
+
+import type { EconomicEvent, EconomicCalendarResponse, TopHeadlinesResponse } from "@/lib/api";
+
+export function useEconomicCalendar() {
+  const fetchCalendar = useCallback(async () => {
+    const data: EconomicCalendarResponse = await api.getEconomicCalendar();
+    return data.events || [];
+  }, []);
+
+  return useApiWithFallback<EconomicEvent[]>({
+    fetcher: fetchCalendar,
+    fallbackData: [],
+    pollInterval: 300000, // 5 minutes
+  });
+}
+
+export function useTopHeadlines(limit = 8) {
+  const fetchHeadlines = useCallback(async () => {
+    const data: TopHeadlinesResponse = await api.getTopHeadlines(limit);
+    return data.headlines || [];
+  }, [limit]);
+
+  return useApiWithFallback<Array<{ title: string; description: string; url: string; publishedAt: string; source: string }>>({
+    fetcher: fetchHeadlines,
+    fallbackData: [],
+    pollInterval: 120000, // 2 minutes
+  });
+}

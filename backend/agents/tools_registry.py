@@ -10,7 +10,8 @@ from market.tools import (
     search_news,
     analyze_technicals,
     get_sentiment,
-    explain_market_move
+    explain_market_move,
+    fetch_economic_calendar,
 )
 from behavior.tools import (
     get_recent_trades,
@@ -124,6 +125,18 @@ def get_market_tools() -> List[Dict[str, Any]]:
                         }
                     },
                     "required": ["instrument"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "fetch_economic_calendar",
+                "description": "Fetch economic calendar events (Non-Farm Payrolls, CPI, interest rate decisions) that may explain market moves",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
                 }
             }
         }
@@ -278,6 +291,7 @@ TOOL_FUNCTIONS = {
     "explain_market_move": explain_market_move,
     "get_sentiment": get_sentiment,
     "analyze_technicals": analyze_technicals,
+    "fetch_economic_calendar": fetch_economic_calendar,
     # Behavior tools
     "get_recent_trades": get_recent_trades,
     "analyze_trade_patterns": analyze_trade_patterns,

@@ -1,5 +1,6 @@
 # ─── TradeIQ Docker Compose ────────────────────────────────
 # Quick deploy: docker compose up --build
+# Production:   docker compose -f docker-compose.yml up --build -d
 # ───────────────────────────────────────────────────────────
 
 services:
@@ -21,6 +22,9 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 15s
+    volumes:
+      - backend_static:/app/staticfiles
 
   # ── Frontend: Next.js ──
   frontend:
@@ -39,3 +43,6 @@ services:
       backend:
         condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  backend_static:

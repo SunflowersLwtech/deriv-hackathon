@@ -312,6 +312,9 @@ temp/
 # Specific Python cache files
 backend/tradeiq/__pycache__/settings.cpython-313.pyc
 
+# Development resources (docs, tests, diagrams)
+dev/
+
 # Local development
 .local/
 local/

@@ -44,34 +44,26 @@ export default function ChatPanel() {
     setIsLoading(true);
 
     try {
-      const response = await api.chatAsk(input.trim(), messages);
+      // Build conversation history for context
+      const history = messages
+        .filter((m) => m.role === "user" || (m.role === "assistant" && m.type === "normal"))
+        .slice(-6)
+        .map((m) => ({ role: m.role, content: m.content }));
+
+      const response = await api.chatWithHistory(input.trim(), "auto", history);
+
+      // Backend returns { message, agent_type, tools_used, source }
+      const replyText = (response as Record<string, unknown>).message as string
+        || (response as Record<string, unknown>).reply as string
+        || "I couldn't generate a response.";
 
       const aiMessage: ChatMessageType = {
         role: "assistant",
-        content: response.reply,
+        content: replyText,
         timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }),
         type: "normal",
       };
       setMessages((prev) => [...prev, aiMessage]);
-
-      if (response.nudge) {
-        const nudgeMessage: ChatMessageType = {
-          role: "assistant",
-          content: response.nudge,
-          timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }),
-          type: "nudge",
-        };
-        setMessages((prev) => [...prev, nudgeMessage]);
-      }
-
-      if (response.disclaimer) {
-        const disclaimerMessage: ChatMessageType = {
-          role: "assistant",
-          content: response.disclaimer,
-          type: "disclaimer",
-        };
-        setMessages((prev) => [...prev, disclaimerMessage]);
-      }
     } catch {
       const errorMessage: ChatMessageType = {
         role: "assistant",
@@ -103,16 +95,16 @@ export default function ChatPanel() {
         </div>
 
         {isLoading && (
-          <div className="px-3 py-3 bg-surface/50">
-            <div className="flex items-center gap-2 mb-1.5">
-              <div className="w-5 h-5 rounded-sm bg-profit/20 flex items-center justify-center">
-                <span className="text-[9px] text-profit mono-data font-bold">AI</span>
+          <div className="px-4 py-4 bg-surface/50">
+            <div className="flex items-center gap-2.5 mb-2">
+              <div className="w-6 h-6 rounded-md bg-profit/20 flex items-center justify-center">
+                <span className="text-[10px] text-profit mono-data font-bold">AI</span>
               </div>
-              <span className="text-[9px] font-semibold tracking-wider mono-data text-profit">
+              <span className="text-xs font-semibold tracking-wider mono-data text-profit">
                 TRADEIQ
               </span>
             </div>
-            <div className="pl-7">
+            <div className="pl-8">
               <LoadingDots />
             </div>
           </div>
@@ -122,8 +114,8 @@ export default function ChatPanel() {
       </div>
 
       {/* Input Area */}
-      <div className="border-t border-border p-3 shrink-0">
-        <div className="flex gap-2">
+      <div className="border-t border-border p-4 shrink-0">
+        <div className="flex gap-2.5">
           <textarea
             ref={inputRef}
             value={input}
@@ -132,8 +124,8 @@ export default function ChatPanel() {
             placeholder="Ask about markets, behavior, or content..."
             rows={1}
             className={cn(
-              "flex-1 bg-surface border border-border rounded-sm px-3 py-2",
-              "text-[11px] text-white placeholder:text-muted-foreground mono-data",
+              "flex-1 bg-surface border border-border rounded-md px-4 py-2.5",
+              "text-sm text-white placeholder:text-muted-foreground mono-data",
               "focus:outline-none focus:border-muted resize-none",
               "transition-colors"
             )}
@@ -142,7 +134,7 @@ export default function ChatPanel() {
             onClick={handleSend}
             disabled={!input.trim() || isLoading}
             className={cn(
-              "px-3 py-2 rounded-sm text-[10px] font-semibold tracking-wider mono-data",
+              "px-4 py-2.5 rounded-md text-xs font-semibold tracking-wider mono-data",
               "transition-all duration-200",
               input.trim() && !isLoading
                 ? "bg-white text-black hover:bg-gray-200"
@@ -152,7 +144,7 @@ export default function ChatPanel() {
             SEND
           </button>
         </div>
-        <p className="text-[8px] text-muted-foreground/40 mt-1.5 mono-data text-center">
+        <p className="text-[10px] text-muted-foreground/50 mt-2 mono-data text-center">
           ⚠ AI analysis only. Not financial advice. DYOR.
         </p>
       </div>

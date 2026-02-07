@@ -1,4 +1,5 @@
 # behavior/views.py
+import os
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -16,7 +17,10 @@ from .tools import (
     get_trading_statistics,
     save_behavioral_metric
 )
+from rest_framework.permissions import AllowAny
 from tradeiq.permissions import IsAuthenticatedOrReadOnly
+
+DEMO_USER_ID = "d1000000-0000-0000-0000-000000000001"
 
 
 class UserProfileViewSet(viewsets.ModelViewSet):
@@ -41,7 +45,7 @@ class UserProfileViewSet(viewsets.ModelViewSet):
 class TradeViewSet(viewsets.ModelViewSet):
     queryset = Trade.objects.all()
     serializer_class = TradeSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
+    permission_classes = [AllowAny]  # Demo mode - allow all access
     
     def get_queryset(self):
         """Filter trades by user if user_id provided."""
@@ -85,6 +89,19 @@ class TradeViewSet(viewsets.ModelViewSet):
             # Generate AI-powered nudge
             nudge = generate_behavioral_nudge_with_ai(str(user.id), analysis)
             
+            # Persist nudge to database
+            try:
+                from django.db import connection
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """INSERT INTO nudges (user_id, nudge_type, message, trigger_reason, severity)
+                           VALUES (%s, %s, %s, %s, %s)""",
+                        [str(user.id), nudge.get('nudge_type', ''), nudge.get('message', ''),
+                         analysis.get('summary', ''), nudge.get('severity', 'low')]
+                    )
+            except Exception as e:
+                print(f"Error saving nudge: {e}")
+
             # Send nudge via WebSocket
             channel_layer = get_channel_layer()
             async_to_sync(channel_layer.group_send)(
@@ -102,7 +119,7 @@ class TradeViewSet(viewsets.ModelViewSet):
                     }
                 }
             )
-            
+
             # Also save to daily metrics
             today = timezone.now().date()
             pattern_flags = {
@@ -183,6 +200,72 @@ class TradeViewSet(viewsets.ModelViewSet):
             'nudge': nudge
         })
     
+    @action(detail=False, methods=['post'])
+    def sync_deriv(self, request):
+        """
+        Sync real trades from Deriv API using DERIV_TOKEN.
+        POST /api/behavior/trades/sync_deriv/
+        {"user_id": "optional-uuid", "days_back": 30}
+
+        Uses the live Deriv API to pull profit_table data and create
+        Trade objects in the database, then runs behavioral analysis.
+        """
+        user_id = request.data.get("user_id", DEMO_USER_ID)
+        days_back = int(request.data.get("days_back", 30))
+
+        # Get or create user
+        try:
+            user = UserProfile.objects.get(id=user_id)
+        except UserProfile.DoesNotExist:
+            user, _ = UserProfile.objects.get_or_create(
+                id=DEMO_USER_ID,
+                defaults={
+                    "email": "alex@tradeiq.demo",
+                    "name": "Alex Demo",
+                    "preferences": {"theme": "dark"},
+                    "watchlist": [],
+                },
+            )
+            user_id = str(user.id)
+
+        api_token = os.environ.get("DERIV_TOKEN", "")
+        if not api_token:
+            return Response(
+                {"error": "DERIV_TOKEN not configured in environment."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        # Sync trades from Deriv
+        try:
+            from .deriv_client import get_deriv_client
+            client = get_deriv_client()
+            sync_result = client.sync_trades_to_database(
+                user_id=user_id,
+                api_token=api_token,
+                days_back=days_back,
+            )
+        except Exception as exc:
+            return Response(
+                {"error": f"Deriv sync failed: {str(exc)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        # Run behavioral analysis on synced trades
+        analysis = None
+        try:
+            analysis = analyze_trade_patterns(user_id, hours=days_back * 24)
+        except Exception as exc:
+            analysis = {"error": str(exc)}
+
+        return Response({
+            "status": "synced",
+            "user_id": user_id,
+            "trades_synced": sync_result.get("trades_created", 0),
+            "trades_updated": sync_result.get("trades_updated", 0),
+            "total_trades": Trade.objects.filter(user_id=user_id).count(),
+            "analysis_summary": analysis,
+        })
+
     @action(detail=False, methods=['post'])
     def load_demo_scenario(self, request):
         """
@@ -325,3 +408,60 @@ class BehavioralMetricViewSet(viewsets.ModelViewSet):
             'user': UserProfileSerializer(demo_user).data,
             'created': created
         })
+
+
+# ─── Deriv API Live Data Views ──────────────────────────────────────
+
+from rest_framework.views import APIView
+from rest_framework.permissions import AllowAny
+
+
+class DerivPortfolioView(APIView):
+    """GET /api/behavior/portfolio/ — Real-time Deriv portfolio (open positions)."""
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        api_token = os.environ.get("DERIV_TOKEN", "")
+        if not api_token:
+            return Response({"error": "DERIV_TOKEN not configured"}, status=500)
+        try:
+            from .deriv_client import get_deriv_client
+            client = get_deriv_client()
+            portfolio = client.fetch_portfolio(api_token)
+            return Response(portfolio)
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=500)
+
+
+class DerivBalanceView(APIView):
+    """GET /api/behavior/balance/ — Real-time Deriv account balance."""
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        api_token = os.environ.get("DERIV_TOKEN", "")
+        if not api_token:
+            return Response({"error": "DERIV_TOKEN not configured"}, status=500)
+        try:
+            from .deriv_client import get_deriv_client
+            client = get_deriv_client()
+            balance = client.fetch_balance(api_token)
+            return Response(balance)
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=500)
+
+
+class DerivRealityCheckView(APIView):
+    """GET /api/behavior/reality-check/ — Deriv official trading session health check."""
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        api_token = os.environ.get("DERIV_TOKEN", "")
+        if not api_token:
+            return Response({"error": "DERIV_TOKEN not configured"}, status=500)
+        try:
+            from .deriv_client import get_deriv_client
+            client = get_deriv_client()
+            check = client.fetch_reality_check(api_token)
+            return Response(check)
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=500)

@@ -39,17 +39,17 @@ export default function Sidebar({ defaultOpen = true }: SidebarProps) {
       <aside
         className={cn(
           "h-full border-l border-border bg-card transition-all duration-300 flex flex-col shrink-0",
-          isOpen ? "w-[380px]" : "w-0 overflow-hidden"
+          isOpen ? "w-[420px] xl:w-[460px]" : "w-0 overflow-hidden"
         )}
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border shrink-0">
           <button
             onClick={() => setIsOpen(false)}
-            className="p-2.5 text-muted hover:text-white transition-colors"
+            className="p-3 text-muted hover:text-white transition-colors"
             title="Collapse sidebar"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M9 18l6-6-6-6" />
             </svg>
           </button>
@@ -59,7 +59,7 @@ export default function Sidebar({ defaultOpen = true }: SidebarProps) {
             <button
               onClick={() => setActiveTab("chat")}
               className={cn(
-                "px-4 py-2.5 text-[10px] font-semibold tracking-wider mono-data transition-colors",
+                "px-5 py-3 text-xs font-semibold tracking-wider mono-data transition-colors",
                 activeTab === "chat"
                   ? "text-white border-b-2 border-white"
                   : "text-muted hover:text-white"
@@ -70,7 +70,7 @@ export default function Sidebar({ defaultOpen = true }: SidebarProps) {
             <button
               onClick={() => setActiveTab("activity")}
               className={cn(
-                "px-4 py-2.5 text-[10px] font-semibold tracking-wider mono-data transition-colors",
+                "px-5 py-3 text-xs font-semibold tracking-wider mono-data transition-colors",
                 activeTab === "activity"
                   ? "text-white border-b-2 border-white"
                   : "text-muted hover:text-white"
@@ -80,7 +80,7 @@ export default function Sidebar({ defaultOpen = true }: SidebarProps) {
             </button>
           </div>
 
-          <div className="w-9" /> {/* Spacer for alignment */}
+          <div className="w-10" /> {/* Spacer for alignment */}
         </div>
 
         {/* Content */}
@@ -138,20 +138,20 @@ function ActivityFeed() {
   };
 
   return (
-    <div className="p-3 space-y-1 overflow-y-auto h-full">
+    <div className="p-4 space-y-2 overflow-y-auto h-full">
       {activities.map((activity, i) => (
         <div
           key={i}
-          className="p-3 border border-border/50 rounded-sm hover:bg-surface transition-colors animate-fade-in"
+          className="p-4 border border-border/50 rounded-md hover:bg-surface transition-colors animate-fade-in"
           style={{ animationDelay: `${i * 50}ms` }}
         >
-          <div className="flex items-center justify-between mb-1.5">
-            <span className={cn("text-[9px] font-semibold tracking-wider mono-data", typeColors[activity.type])}>
+          <div className="flex items-center justify-between mb-2">
+            <span className={cn("text-xs font-semibold tracking-wider mono-data", typeColors[activity.type])}>
               {typeLabels[activity.type]}
             </span>
-            <span className="text-[9px] text-muted-foreground mono-data">{activity.time}</span>
+            <span className="text-[11px] text-muted-foreground mono-data">{activity.time}</span>
           </div>
-          <p className="text-[11px] text-muted leading-relaxed">{activity.message}</p>
+          <p className="text-sm text-muted leading-relaxed">{activity.message}</p>
         </div>
       ))}
     </div>

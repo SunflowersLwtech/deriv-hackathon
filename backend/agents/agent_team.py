@@ -1,10 +1,11 @@
 """
 Agent Team Pipeline for TradeIQ
-4 Agents working in sequence:
-  1. Market Monitor  → detects volatility events
-  2. Analyst         → root-cause analysis of the event
-  3. Portfolio Advisor → personalised interpretation for user holdings
-  4. Content Creator  → generates English market commentary for Bluesky
+5 Agents working in sequence:
+  1. Market Monitor       → detects volatility events (Redis-cached price delta)
+  2. Analyst              → root-cause analysis of the event
+  3. Portfolio Advisor     → personalised interpretation for user holdings
+  3.5 Behavioral Sentinel → fuses market event + user's behavioral history (WOW MOMENT)
+  4. Content Creator       → generates English market commentary for Bluesky
 
 Each agent has a clear input/output contract so they can be tested
 independently or chained via `run_pipeline()`.
@@ -22,9 +23,11 @@ from agents.llm_client import get_llm_client
 from agents.prompts import MASTER_COMPLIANCE_RULES
 from market.tools import (
     fetch_price_data,
+    fetch_price_history,
     search_news,
     get_sentiment,
 )
+from market.cache import get_cached_price, set_cached_price
 
 
 # ─── Data contracts between agents ───────────────────────────────────
@@ -78,6 +81,23 @@ class PersonalizedInsight:
 
 
 @dataclass
+class BehavioralSentinelInsight:
+    """Output of Behavioral Sentinel Agent (Stage 3.5) – fuses market + behavior."""
+    instrument: str
+    market_event_summary: str
+    behavioral_context: str       # summary of user's relevant behavioral patterns
+    risk_level: str               # "high" | "medium" | "low"
+    personalized_warning: str     # the "wow" message combining both
+    historical_pattern_match: str # e.g. "3 out of 5 times you revenge-traded after BTC spikes"
+    user_stats_snapshot: Dict[str, Any] = field(default_factory=dict)
+    generated_at: str = ""
+
+    def __post_init__(self):
+        if not self.generated_at:
+            self.generated_at = datetime.now().isoformat()
+
+
+@dataclass
 class MarketCommentary:
     """Output of Content Creator Agent."""
     post: str
@@ -101,6 +121,7 @@ class PipelineResult:
     volatility_event: Optional[Dict[str, Any]] = None
     analysis_report: Optional[Dict[str, Any]] = None
     personalized_insight: Optional[Dict[str, Any]] = None
+    sentinel_insight: Optional[Dict[str, Any]] = None
     market_commentary: Optional[Dict[str, Any]] = None
     errors: List[str] = field(default_factory=list)
     pipeline_started_at: str = ""
@@ -139,7 +160,8 @@ def market_monitor_detect(
     """
     Agent 1 – Market Monitor.
 
-    Scans instruments for significant price movements.
+    Scans instruments for significant price movements using Redis-cached
+    price comparison for real delta detection.
     Can also accept a *custom_event* dict for manual/demo triggers.
 
     Returns the most significant VolatilityEvent found, or None.
@@ -155,7 +177,7 @@ def market_monitor_detect(
             raw_data=custom_event,
         )
 
-    # ── Automatic scan ──
+    # ── Automatic scan with Redis price caching ──
     instruments = instruments or MONITOR_INSTRUMENTS
     events: List[VolatilityEvent] = []
 
@@ -166,26 +188,34 @@ def market_monitor_detect(
             if price is None:
                 continue
 
-            # Compare to a reference price embedded in mock data or use a
-            # simple heuristic: since we have single tick data, we simulate
-            # change detection via a small random variance check.  In
-            # production this would compare against a rolling window stored
-            # in Redis / DB.
-            # For demo, generate a simulated change based on sentiment.
-            sentiment_data = get_sentiment(inst)
-            score = sentiment_data.get("score", 0.0)
-            simulated_change = score * 2.5  # rough mapping
+            # Get previous price from Redis cache
+            previous_price = get_cached_price(inst)
+
+            if previous_price is not None and previous_price > 0:
+                # Real price change calculation
+                change_pct = ((price - previous_price) / previous_price) * 100
+            else:
+                # First run fallback: use recent price history
+                history = fetch_price_history(inst, timeframe="5m", count=12)
+                change_pct = history.get("change_percent", 0.0)
+
+            # Always update the cached price
+            set_cached_price(inst, price, ttl_seconds=300)
 
             threshold = _threshold(inst)
-            if abs(simulated_change) >= threshold:
+            if abs(change_pct) >= threshold:
                 events.append(
                     VolatilityEvent(
                         instrument=inst,
                         current_price=price,
-                        price_change_pct=round(simulated_change, 2),
-                        direction="spike" if simulated_change > 0 else "drop",
-                        magnitude="high" if abs(simulated_change) >= threshold * 2 else "medium",
-                        raw_data=price_data,
+                        price_change_pct=round(change_pct, 2),
+                        direction="spike" if change_pct > 0 else "drop",
+                        magnitude="high" if abs(change_pct) >= threshold * 2 else "medium",
+                        raw_data={
+                            **price_data,
+                            "previous_price": previous_price,
+                            "source": "redis_delta",
+                        },
                     )
                 )
         except Exception as exc:
@@ -225,8 +255,6 @@ def analyst_analyze(event: VolatilityEvent) -> AnalysisReport:
     Takes a VolatilityEvent and produces a structured AnalysisReport
     by combining news search, sentiment analysis, and LLM reasoning.
     """
-    llm = get_llm_client()
-
     # Gather context data
     news = search_news(event.instrument, limit=5)
     sentiment = get_sentiment(event.instrument)
@@ -251,6 +279,7 @@ Recent News:
 Analyze the root causes of this volatility event. Return JSON only."""
 
     try:
+        llm = get_llm_client()
         response = llm.simple_chat(
             system_prompt=_ANALYST_SYSTEM,
             user_message=prompt,
@@ -308,8 +337,6 @@ def portfolio_advisor_interpret(
     Takes an AnalysisReport + user portfolio and produces a
     PersonalizedInsight with impact assessment and educational suggestions.
     """
-    llm = get_llm_client()
-
     # Default demo portfolio if none provided
     if not user_portfolio:
         user_portfolio = [
@@ -344,6 +371,7 @@ Directly Affected Positions:
 Provide a personalised impact assessment. Return JSON only."""
 
     try:
+        llm = get_llm_client()
         response = llm.simple_chat(
             system_prompt=_ADVISOR_SYSTEM,
             user_message=prompt,
@@ -370,6 +398,139 @@ Provide a personalised impact assessment. Return JSON only."""
         )
 
 
+# ─── Agent 3.5: Behavioral Sentinel ────────────────────────────────────
+
+_SENTINEL_SYSTEM = f"""You are TradeIQ's Behavioral Sentinel — a unique AI that combines
+real-time market events with a trader's personal behavioral history.
+
+Your job: When a market event happens, tell the trader what THEY specifically
+tend to do in these situations, based on THEIR actual trading data.
+
+{MASTER_COMPLIANCE_RULES}
+
+Additional rules:
+- Reference the trader's specific patterns with data ("3 out of 5 times...")
+- Be warm but direct about behavioral risks
+- Never shame — frame as awareness
+- Connect the market event to the behavioral pattern explicitly
+- If no patterns are detected, provide encouraging feedback
+
+Output a JSON object:
+{{
+  "behavioral_context": "<summary of relevant behavioral patterns>",
+  "risk_level": "high" | "medium" | "low",
+  "personalized_warning": "<the key message connecting market event + behavior>",
+  "historical_pattern_match": "<specific pattern with numbers>"
+}}
+"""
+
+
+def behavioral_sentinel_analyze(
+    event: VolatilityEvent,
+    report: AnalysisReport,
+    user_id: Optional[str] = None,
+) -> BehavioralSentinelInsight:
+    """
+    Agent 3.5 – Behavioral Sentinel.
+
+    Fuses a market volatility event with the user's behavioral history
+    to produce a personalized, context-aware warning.
+
+    This is the WOW MOMENT: "The market just did X, and based on your
+    history, you tend to Y in these situations."
+    """
+    from behavior.tools import analyze_trade_patterns, get_trading_statistics
+
+    # Default demo user if none specified
+    demo_user_id = user_id or "d1000000-0000-0000-0000-000000000001"
+
+    # Fetch behavioral data
+    try:
+        patterns = analyze_trade_patterns(demo_user_id, hours=168)  # 7 days
+        stats = get_trading_statistics(demo_user_id, days=30)
+    except Exception as exc:
+        print(f"[Sentinel] Error fetching behavioral data: {exc}")
+        patterns = {"patterns": {}, "summary": "No data available", "trade_count": 0}
+        stats = {"total_trades": 0, "win_rate": 0}
+
+    # Build the fusion prompt
+    behavioral_summary = patterns.get("summary", "No patterns detected")
+    pattern_details = []
+    p = patterns.get("patterns", {})
+    for pattern_name in ["revenge_trading", "overtrading", "loss_chasing", "time_patterns"]:
+        pd = p.get(pattern_name, {})
+        if isinstance(pd, dict) and pd.get("detected"):
+            pattern_details.append(
+                f"- {pattern_name}: {pd.get('details', 'detected')} "
+                f"(severity: {pd.get('severity', 'unknown')})"
+            )
+
+    pattern_context = "\n".join(pattern_details) if pattern_details else "No concerning patterns in recent history."
+
+    prompt = f"""MARKET EVENT:
+- Instrument: {event.instrument}
+- Price Change: {event.price_change_pct:+.2f}% ({event.direction})
+- Magnitude: {event.magnitude}
+- Analysis: {report.event_summary}
+- Root Causes: {'; '.join(report.root_causes[:3])}
+
+USER'S BEHAVIORAL PROFILE (last 30 days):
+- Total trades: {stats.get('total_trades', 0)}
+- Win rate: {stats.get('win_rate', 0):.1f}%
+- Total P&L: ${stats.get('total_pnl', 0):.2f}
+- Best instrument: {stats.get('best_instrument', 'N/A')}
+- Worst instrument: {stats.get('worst_instrument', 'N/A')}
+
+RECENT BEHAVIORAL PATTERNS (7 days):
+{behavioral_summary}
+{pattern_context}
+
+Given this market event and this trader's behavioral profile, generate a
+personalized behavioral warning. Connect the dots between what's happening
+in the market and what this trader tends to do in these situations.
+Return JSON only."""
+
+    try:
+        llm = get_llm_client()
+        response = llm.simple_chat(
+            system_prompt=_SENTINEL_SYSTEM,
+            user_message=prompt,
+            temperature=0.5,
+            max_tokens=500,
+        )
+        parsed = _parse_json(response)
+
+        return BehavioralSentinelInsight(
+            instrument=event.instrument,
+            market_event_summary=report.event_summary,
+            behavioral_context=parsed.get("behavioral_context", behavioral_summary),
+            risk_level=parsed.get("risk_level", "medium"),
+            personalized_warning=parsed.get(
+                "personalized_warning",
+                f"Market event on {event.instrument}: check your recent patterns.",
+            ),
+            historical_pattern_match=parsed.get(
+                "historical_pattern_match",
+                "Insufficient data for pattern matching.",
+            ),
+            user_stats_snapshot=stats,
+        )
+    except Exception as exc:
+        print(f"[Sentinel] LLM Error: {exc}")
+        return BehavioralSentinelInsight(
+            instrument=event.instrument,
+            market_event_summary=report.event_summary,
+            behavioral_context=behavioral_summary,
+            risk_level="medium",
+            personalized_warning=(
+                f"{event.instrument} moved {event.price_change_pct:+.2f}%. "
+                f"Review your trading patterns."
+            ),
+            historical_pattern_match="Analysis unavailable.",
+            user_stats_snapshot=stats,
+        )
+
+
 # ─── Agent 4: Content Creator ─────────────────────────────────────────
 
 _CONTENT_SYSTEM = f"""You are TradeIQ's Social Content Creator.
@@ -378,7 +539,7 @@ Create English Bluesky market commentary posts.
 {MASTER_COMPLIANCE_RULES}
 
 Requirements:
-- Each post MUST be ≤ 300 characters
+- Each post MUST be <= 300 characters
 - Include specific data points (prices, percentages)
 - Use 1-2 relevant emojis
 - Include 2-3 hashtags
@@ -387,7 +548,7 @@ Requirements:
 
 Output a JSON object:
 {{
-  "post": "<English post ≤ 300 chars>",
+  "post": "<English post <= 300 chars>",
   "hashtags": ["#tag1", "#tag2"],
   "data_points": ["point1", "point2"]
 }}
@@ -404,8 +565,6 @@ def content_creator_generate(
     Takes an AnalysisReport (and optionally a PersonalizedInsight)
     and produces English Bluesky market commentary posts.
     """
-    llm = get_llm_client()
-
     insight_context = ""
     if insight:
         insight_context = f"""
@@ -425,11 +584,12 @@ Analysis Report:
 - Sources: {', '.join(s.get('source', '') for s in report.news_sources[:3])}
 {insight_context}
 
-Generate an English Bluesky post ≤ 300 chars. Return JSON only."""
+Generate an English Bluesky post <= 300 chars. Return JSON only."""
 
     compliance_tag = "📊 Analysis by TradeIQ | Not financial advice"
 
     try:
+        llm = get_llm_client()
         response = llm.simple_chat(
             system_prompt=_CONTENT_SYSTEM,
             user_message=prompt,
@@ -490,16 +650,18 @@ def run_pipeline(
     custom_event: Optional[Dict[str, Any]] = None,
     user_portfolio: Optional[List[Dict[str, Any]]] = None,
     skip_content: bool = False,
+    user_id: Optional[str] = None,
 ) -> PipelineResult:
     """
     Run the full Agent Team pipeline:
-      Monitor → Analyst → Advisor → Content Creator
+      Monitor -> Analyst -> Advisor -> Sentinel -> Content Creator
 
     Args:
         instruments: Instruments to scan (default: major pairs)
         custom_event: Manual event trigger (bypasses monitor scan)
         user_portfolio: User positions for personalised insight
         skip_content: If True, skip content generation step
+        user_id: User UUID for behavioral sentinel (enables Stage 3.5)
 
     Returns:
         PipelineResult with all stages' outputs
@@ -542,8 +704,17 @@ def run_pipeline(
     except Exception as exc:
         result.status = "partial"
         result.errors.append(f"Advisor error: {exc}")
-        # Continue to content even if advisor fails
+        # Continue to sentinel/content even if advisor fails
         insight = None
+
+    # ── Stage 3.5: Behavioral Sentinel ──
+    sentinel = None
+    if user_id:
+        try:
+            sentinel = behavioral_sentinel_analyze(event, report, user_id)
+            result.sentinel_insight = asdict(sentinel)
+        except Exception as exc:
+            result.errors.append(f"Sentinel error: {exc}")
 
     # ── Stage 4: Content Creator ──
     if not skip_content:

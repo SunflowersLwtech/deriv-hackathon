@@ -35,46 +35,46 @@ export default function BehaviorCard({ pattern, className }: BehaviorCardProps) 
   const { status, label } = severityMap[pattern.severity];
 
   return (
-    <div className={cn("bg-card border border-border rounded-sm overflow-hidden", className)}>
+    <div className={cn("bg-card border border-border rounded-md overflow-hidden", className)}>
       {/* Header */}
-      <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
           <div
             className={cn(
-              "w-2 h-2 rounded-full",
+              "w-2.5 h-2.5 rounded-full",
               pattern.severity === "critical" && "bg-loss animate-pulse",
               pattern.severity === "high" && "bg-loss",
               pattern.severity === "medium" && "bg-warning",
               pattern.severity === "low" && "bg-accent"
             )}
           />
-          <span className="text-[11px] text-white font-semibold mono-data uppercase tracking-wider">
+          <span className="text-sm text-white font-semibold mono-data uppercase tracking-wider">
             {pattern.type.replace(/_/g, " ")}
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <StatusBadge status={status} label={label} pulse={pattern.severity === "critical"} />
-          <span className="text-[9px] text-muted-foreground mono-data">{pattern.detectedAt}</span>
+          <span className="text-xs text-muted-foreground mono-data">{pattern.detectedAt}</span>
         </div>
       </div>
 
       {/* Description */}
-      <div className="px-4 py-3">
-        <p className="text-[11px] text-muted leading-relaxed">{pattern.description}</p>
+      <div className="px-5 py-4">
+        <p className="text-sm text-muted leading-relaxed">{pattern.description}</p>
       </div>
 
       {/* Metrics */}
-      <div className="px-4 pb-3">
-        <div className="grid grid-cols-3 gap-2">
+      <div className="px-5 pb-4">
+        <div className="grid grid-cols-3 gap-3">
           {pattern.metrics.map((metric, i) => (
-            <div key={i} className="bg-surface rounded-sm p-2.5">
-              <div className="text-[9px] text-muted-foreground mono-data tracking-wider mb-1">
+            <div key={i} className="bg-surface rounded-md p-3.5">
+              <div className="text-xs text-muted-foreground mono-data tracking-wider mb-1.5">
                 {metric.label}
               </div>
-              <div className="flex items-baseline gap-1">
+              <div className="flex items-baseline gap-1.5">
                 <span
                   className={cn(
-                    "text-sm font-bold mono-data",
+                    "text-base font-bold mono-data",
                     metric.status === "ok" && "text-profit",
                     metric.status === "warning" && "text-warning",
                     metric.status === "danger" && "text-loss"
@@ -83,7 +83,7 @@ export default function BehaviorCard({ pattern, className }: BehaviorCardProps) 
                   {metric.value}
                 </span>
                 {metric.threshold && (
-                  <span className="text-[8px] text-muted-foreground mono-data">
+                  <span className="text-[10px] text-muted-foreground mono-data">
                     / {metric.threshold}
                   </span>
                 )}
@@ -95,10 +95,10 @@ export default function BehaviorCard({ pattern, className }: BehaviorCardProps) 
 
       {/* AI Nudge */}
       <CollapsibleSection title="AI BEHAVIORAL NUDGE" defaultOpen={pattern.severity === "critical" || pattern.severity === "high"}>
-        <div className="px-4 py-3 bg-warning/5">
-          <div className="flex gap-2">
-            <span className="text-warning text-sm shrink-0">💡</span>
-            <p className="text-[11px] text-warning/80 leading-relaxed italic">
+        <div className="px-5 py-4 bg-warning/5">
+          <div className="flex gap-3">
+            <span className="text-warning text-base shrink-0">💡</span>
+            <p className="text-sm text-warning/80 leading-relaxed italic">
               &ldquo;{pattern.nudge}&rdquo;
             </p>
           </div>

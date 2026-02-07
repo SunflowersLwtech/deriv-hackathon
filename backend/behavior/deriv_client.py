@@ -331,9 +331,15 @@ class DerivClient:
                 'errors': ['User not found']
             }
         
-        # Fetch trades from Deriv
+        # Fetch trades from Deriv (use fresh client in dedicated thread)
         try:
-            trades = asyncio.run(self.fetch_all_trades(api_token, days_back))
+            async def _fetch_trades():
+                client = DerivClient(self.app_id)
+                try:
+                    return await client.fetch_all_trades(api_token, days_back)
+                finally:
+                    await client.disconnect()
+            trades = self._run_async(_fetch_trades())
         except DerivAPIError as e:
             return {
                 'success': False,
@@ -400,6 +406,87 @@ class DerivClient:
             'errors': errors
         }
     
+    @staticmethod
+    def _run_async(coro):
+        """Run an async coroutine safely from sync Django context.
+        Uses a dedicated thread with its own event loop to avoid
+        conflicts with Django Channels' running loop."""
+        import concurrent.futures, threading
+
+        result = [None]
+        exception = [None]
+
+        def _thread_target():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                result[0] = loop.run_until_complete(coro)
+            except Exception as e:
+                exception[0] = e
+            finally:
+                loop.close()
+
+        t = threading.Thread(target=_thread_target)
+        t.start()
+        t.join(timeout=30)
+        if exception[0]:
+            raise exception[0]
+        return result[0]
+
+    def fetch_portfolio(self, api_token: Optional[str] = None) -> Dict[str, Any]:
+        """Fetch user's open positions (portfolio)."""
+        async def _fetch():
+            client = DerivClient(self.app_id)
+            try:
+                await client.connect()
+                await client.authorize(api_token)
+                resp = await client.send_request({"portfolio": 1})
+                return resp.get("portfolio", {})
+            finally:
+                await client.disconnect()
+        return self._run_async(_fetch())
+
+    def fetch_balance(self, api_token: Optional[str] = None) -> Dict[str, Any]:
+        """Fetch user's account balance."""
+        async def _fetch():
+            client = DerivClient(self.app_id)
+            try:
+                await client.connect()
+                await client.authorize(api_token)
+                resp = await client.send_request({"balance": 1})
+                return resp.get("balance", {})
+            finally:
+                await client.disconnect()
+        return self._run_async(_fetch())
+
+    def fetch_reality_check(self, api_token: Optional[str] = None) -> Dict[str, Any]:
+        """Fetch Deriv official trading session health check."""
+        async def _fetch():
+            client = DerivClient(self.app_id)
+            try:
+                await client.connect()
+                await client.authorize(api_token)
+                resp = await client.send_request({"reality_check": 1})
+                return resp.get("reality_check", {})
+            finally:
+                await client.disconnect()
+        return self._run_async(_fetch())
+
+    def fetch_active_symbols(self) -> List[Dict[str, Any]]:
+        """Fetch all available trading instruments (no auth required)."""
+        async def _fetch():
+            client = DerivClient(self.app_id)
+            try:
+                await client.connect()
+                resp = await client.send_request({
+                    "active_symbols": "brief",
+                    "product_type": "basic"
+                })
+                return resp.get("active_symbols", [])
+            finally:
+                await client.disconnect()
+        return self._run_async(_fetch())
+
     async def subscribe_to_transactions(
         self,
         callback: callable,
