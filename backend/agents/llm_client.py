@@ -1,6 +1,7 @@
 """
 Unified DeepSeek LLM Client for TradeIQ
-Uses latest DeepSeek-V3.2 with function calling support
+Uses DeepSeek-V3 with function calling support.
+Falls back to OpenRouter if DeepSeek API has insufficient balance.
 """
 import os
 from typing import List, Dict, Any, Optional
@@ -8,21 +9,47 @@ from openai import OpenAI
 
 
 class DeepSeekClient:
-    """Unified DeepSeek client for all AI agents"""
-    
+    """Unified DeepSeek client for all AI agents, with OpenRouter fallback"""
+
     def __init__(self):
-        api_key = os.environ.get("DEEPSEEK_API_KEY", "")
-        if not api_key:
-            raise ValueError("DEEPSEEK_API_KEY not set in environment variables")
-        
-        self.client = OpenAI(
-            api_key=api_key,
-            base_url="https://api.deepseek.com"
-        )
-        # Use latest model: deepseek-reasoner for tool use, deepseek-chat for simple tasks
-        self.reasoner_model = "deepseek-reasoner"  # V3.2 with tool use
-        self.chat_model = "deepseek-chat"  # Standard chat model
-    
+        # Try DeepSeek direct first, fallback to OpenRouter
+        deepseek_key = os.environ.get("DEEPSEEK_API_KEY", "")
+        openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
+
+        if not deepseek_key and not openrouter_key:
+            raise ValueError(
+                "Neither DEEPSEEK_API_KEY nor OPENROUTER_API_KEY set in environment"
+            )
+
+        # Try OpenRouter first (since DeepSeek balance is depleted)
+        if openrouter_key:
+            self.client = OpenAI(
+                api_key=openrouter_key,
+                base_url="https://openrouter.ai/api/v1",
+            )
+            self.chat_model = "deepseek/deepseek-chat-v3-0324"
+            self.reasoner_model = "deepseek/deepseek-chat-v3-0324"
+            self._provider = "openrouter"
+        else:
+            self.client = OpenAI(
+                api_key=deepseek_key,
+                base_url="https://api.deepseek.com",
+            )
+            self.chat_model = "deepseek-chat"
+            self.reasoner_model = "deepseek-chat"
+            self._provider = "deepseek"
+
+        # Fallback client (if primary fails)
+        self._fallback_client = None
+        self._fallback_model = None
+        if deepseek_key and openrouter_key:
+            # Primary is OpenRouter, fallback is DeepSeek direct
+            self._fallback_client = OpenAI(
+                api_key=deepseek_key,
+                base_url="https://api.deepseek.com",
+            )
+            self._fallback_model = "deepseek-chat"
+
     def chat(
         self,
         messages: List[Dict[str, str]],
@@ -34,36 +61,35 @@ class DeepSeekClient:
     ) -> Any:
         """
         Chat completion with optional tool calling support.
-        
-        Args:
-            messages: List of message dicts with 'role' and 'content'
-            model: Model name (defaults to chat_model)
-            temperature: Sampling temperature
-            max_tokens: Max tokens in response
-            tools: List of tool definitions for function calling
-            tool_choice: "auto", "none", or {"type": "function", "function": {"name": "..."}}
-        
-        Returns:
-            Chat completion response
+        Tries primary provider, falls back if 402/insufficient balance.
         """
         model = model or self.chat_model
-        
+
         params = {
             "model": model,
             "messages": messages,
             "temperature": temperature,
         }
-        
+
         if max_tokens:
             params["max_tokens"] = max_tokens
-        
+
         if tools:
             params["tools"] = tools
             if tool_choice:
                 params["tool_choice"] = tool_choice
-        
-        return self.client.chat.completions.create(**params)
-    
+
+        try:
+            return self.client.chat.completions.create(**params)
+        except Exception as e:
+            error_str = str(e)
+            # If primary fails with 402 (insufficient balance), try fallback
+            if ("402" in error_str or "Insufficient" in error_str) and self._fallback_client:
+                fallback_params = params.copy()
+                fallback_params["model"] = self._fallback_model or "deepseek-chat"
+                return self._fallback_client.chat.completions.create(**fallback_params)
+            raise
+
     def chat_with_tools(
         self,
         system_prompt: str,
@@ -74,35 +100,24 @@ class DeepSeekClient:
         max_tokens: Optional[int] = None,
     ) -> Any:
         """
-        Convenience method for chat with tools using reasoner model.
-        
-        Args:
-            system_prompt: System message
-            user_message: User query
-            tools: List of tool definitions
-            model: Override model (defaults to reasoner_model)
-            temperature: Sampling temperature
-            max_tokens: Max tokens
-        
-        Returns:
-            Chat completion response
+        Convenience method for chat with tools using chat model (supports function calling).
         """
-        model = model or self.reasoner_model
-        
+        model = model or self.chat_model
+
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message}
+            {"role": "user", "content": user_message},
         ]
-        
+
         return self.chat(
             messages=messages,
             model=model,
             temperature=temperature,
             max_tokens=max_tokens,
             tools=tools,
-            tool_choice="auto"
+            tool_choice="auto",
         )
-    
+
     def simple_chat(
         self,
         system_prompt: str,
@@ -112,28 +127,20 @@ class DeepSeekClient:
     ) -> str:
         """
         Simple chat without tools (uses chat_model).
-        
-        Args:
-            system_prompt: System message
-            user_message: User query
-            temperature: Sampling temperature
-            max_tokens: Max tokens
-        
-        Returns:
-            Response text content
+        Returns response text content.
         """
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message}
+            {"role": "user", "content": user_message},
         ]
-        
+
         response = self.chat(
             messages=messages,
             model=self.chat_model,
             temperature=temperature,
-            max_tokens=max_tokens
+            max_tokens=max_tokens,
         )
-        
+
         return response.choices[0].message.content
 
 

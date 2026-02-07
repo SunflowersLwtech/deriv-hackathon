@@ -7,10 +7,16 @@ Tests: connection, authorization, balance, account info, and market tick data.
 import asyncio
 import json
 import websockets
+import os
+from pathlib import Path
+from dotenv import load_dotenv
 
 # ─── Configuration ───────────────────────────────────────────────
-APP_ID = "125489"
-API_TOKEN = "QfoYrOAKRv2H8Qb"
+# Load environment from project root
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+APP_ID = os.getenv("DERIV_APP_ID", "125489")
+API_TOKEN = os.getenv("DERIV_TOKEN", "")
 WS_URL = f"wss://ws.derivws.com/websockets/v3?app_id={APP_ID}"
 
 
@@ -163,6 +169,7 @@ async def main():
     print("Deriv WebSocket API Test")
     print(f"App ID : {APP_ID}")
     print(f"URL    : {WS_URL}")
+    print(f"Token  : {'configured' if API_TOKEN else 'missing (public tests only)'}")
 
     try:
         async with websockets.connect(WS_URL) as ws:
@@ -174,7 +181,11 @@ async def main():
             await test_website_status(ws)
 
             # Authorized API tests
-            authorized = await test_authorize(ws)
+            authorized = False
+            if API_TOKEN:
+                authorized = await test_authorize(ws)
+            else:
+                print("\n[SKIP] Auth tests skipped because DERIV_TOKEN is not configured")
 
             if authorized:
                 await test_balance(ws)

@@ -4,7 +4,7 @@ Functions for Content Creator Agent
 """
 from typing import Dict, Any, List, Optional
 from agents.llm_client import get_llm_client
-from agents.prompts import SYSTEM_PROMPT_CONTENT, COMPLIANCE_RULES
+from agents.prompts import SYSTEM_PROMPT_CONTENT, MASTER_COMPLIANCE_RULES as COMPLIANCE_RULES
 from .models import AIPersona, SocialPost
 from datetime import datetime
 

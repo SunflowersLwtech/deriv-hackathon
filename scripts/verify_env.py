@@ -1,10 +1,13 @@
 #!/usr/bin/env python
 """
-Verify TradeIQ environment configuration
-Checks all required packages and versions
+Verify TradeIQ environment configuration.
+Checks required packages, env vars, and Django settings bootstrap.
 """
 import sys
+import os
 import importlib
+from pathlib import Path
+from dotenv import load_dotenv
 
 REQUIRED_PACKAGES = {
     'django': '5.0',
@@ -18,6 +21,23 @@ REQUIRED_PACKAGES = {
     'dj_database_url': '2.1',
     'corsheaders': '4.3',
 }
+
+REQUIRED_ENV_VARS = [
+    'DATABASE_URL',
+    'DJANGO_SECRET_KEY',
+    'SUPABASE_JWT_SECRET',
+    'SUPABASE_URL',
+    'DERIV_APP_ID',
+    'DERIV_TOKEN',
+    'NEWS_API_KEY',
+    'FINNHUB_API_KEY',
+    'BLUESKY_HANDLE',
+    'BLUESKY_APP_PASSWORD',
+    'GOOGLE_CLIENT_ID',
+    'GOOGLE_CLIENT_SECRET',
+    'CALLBACK_URL',
+]
+
 
 def check_package(package_name, min_version=None):
     """Check if a package is installed and optionally verify version"""
@@ -42,7 +62,22 @@ def check_package(package_name, min_version=None):
     except ImportError:
         return False, None, "Not installed"
 
+
+def check_env_var(name: str):
+    value = (os.environ.get(name) or "").strip()
+    return bool(value), len(value)
+
+
 def main():
+    root_dir = Path(__file__).resolve().parent.parent
+    backend_dir = root_dir / "backend"
+    load_dotenv(root_dir / ".env")
+
+    # Make verify script runnable from project root without extra env exports.
+    if str(backend_dir) not in sys.path:
+        sys.path.insert(0, str(backend_dir))
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tradeiq.settings")
+
     print("=" * 50)
     print("TradeIQ Environment Verification")
     print("=" * 50)
@@ -75,6 +110,25 @@ def main():
     
     print()
     print("=" * 50)
+    print("\n🔐 Environment Variables:")
+    env_all_ok = True
+    for key in REQUIRED_ENV_VARS:
+        ok, value_len = check_env_var(key)
+        status = "✅" if ok else "❌"
+        print(f"{status} {key:20s} {'set' if ok else 'missing'} (len={value_len})")
+        if not ok:
+            env_all_ok = False
+
+    has_deepseek = bool((os.environ.get("DEEPSEEK_API_KEY") or "").strip())
+    has_openrouter = bool((os.environ.get("OPENROUTER_API_KEY") or "").strip())
+    llm_ok = has_deepseek or has_openrouter
+    print(
+        f"{'✅' if llm_ok else '❌'} "
+        f"{'DEEPSEEK/OPENROUTER':20s} "
+        f"{'set' if llm_ok else 'missing'} "
+        f"(deepseek={'Y' if has_deepseek else 'N'}, openrouter={'Y' if has_openrouter else 'N'})"
+    )
+    env_all_ok = env_all_ok and llm_ok
     
     # Check Django settings
     try:
@@ -94,17 +148,19 @@ def main():
         
     except Exception as e:
         print(f"\n⚠️  Could not verify Django settings: {e}")
+        env_all_ok = False
     
     print()
     
-    if all_ok:
-        print("✅ All packages verified successfully!")
+    if all_ok and env_all_ok:
+        print("✅ Environment verification passed!")
         return 0
     else:
-        print("❌ Some packages are missing or have incorrect versions")
+        print("❌ Environment verification failed")
         print("\nTo fix, run:")
         print("  conda activate tradeiq")
         print("  pip install -r backend/requirements.txt")
+        print("  # then update missing values in .env")
         return 1
 
 if __name__ == '__main__':

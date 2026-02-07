@@ -109,7 +109,7 @@ def route_query(
             
             final_response_obj = llm.chat(
                 messages=messages,
-                model=llm.reasoner_model,
+                model=llm.chat_model,
                 temperature=0.7,
                 max_tokens=1000
             )

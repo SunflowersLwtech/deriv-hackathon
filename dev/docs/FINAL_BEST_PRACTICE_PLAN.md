@@ -13,7 +13,7 @@
 3. Supabase Auth Google 登录（前后端联动）。
 
 严格约束：
-1. 仅使用 DeepSeek API（禁止 OpenRouter）。
+1. 仅使用 DeepSeek API（只有不得已才使用 OpenRouter）。
 2. 使用 conda 环境 `tradeiq`。
 3. 统一从项目根目录 `.env` 读取配置。
 4. Supabase Google Provider 已在控制台配置，代码只做接入。
@@ -216,7 +216,7 @@ DoD：
 
 目标：构建可演示前端体验。
 
-任务：
+任务：(完全复刻https://nof1.ai/的前端包括色彩,元素,任何视觉效果,交互可以自然一些)
 1. 初始化 Next.js 14 + Tailwind + ESLint + TS。
 2. 新建 API/WebSocket 客户端：`src/lib/api.ts`、`src/lib/websocket.ts`。
 3. 搭建基础壳：Sidebar、TickerBar、ChatPanel、DisclaimerBadge、DataCard、AppShell。

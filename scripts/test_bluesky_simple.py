@@ -7,8 +7,8 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load .env file
-env_path = Path(__file__).parent / '.env'
+# Load project root .env file
+env_path = Path(__file__).resolve().parent.parent / '.env'
 load_dotenv(env_path)
 
 def test_bluesky_post():

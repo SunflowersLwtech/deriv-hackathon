@@ -16,11 +16,13 @@ from .tools import (
     get_trading_statistics,
     save_behavioral_metric
 )
+from tradeiq.permissions import IsAuthenticatedOrReadOnly
 
 
 class UserProfileViewSet(viewsets.ModelViewSet):
     queryset = UserProfile.objects.all()
     serializer_class = UserProfileSerializer
+    permission_classes = [IsAuthenticatedOrReadOnly]
     
     @action(detail=True, methods=['get'])
     def statistics(self, request, pk=None):
@@ -39,6 +41,7 @@ class UserProfileViewSet(viewsets.ModelViewSet):
 class TradeViewSet(viewsets.ModelViewSet):
     queryset = Trade.objects.all()
     serializer_class = TradeSerializer
+    permission_classes = [IsAuthenticatedOrReadOnly]
     
     def get_queryset(self):
         """Filter trades by user if user_id provided."""
@@ -203,6 +206,7 @@ class TradeViewSet(viewsets.ModelViewSet):
 class BehavioralMetricViewSet(viewsets.ModelViewSet):
     queryset = BehavioralMetric.objects.all()
     serializer_class = BehavioralMetricSerializer
+    permission_classes = [IsAuthenticatedOrReadOnly]
     
     def get_queryset(self):
         """Filter metrics by user if user_id provided."""

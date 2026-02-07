@@ -40,12 +40,20 @@ class DerivClient:
         self.app_id = app_id or os.environ.get('DERIV_APP_ID', '')
         if not self.app_id:
             raise ValueError("DERIV_APP_ID is required. Get it from https://developers.deriv.com/")
+        self.default_api_token = os.environ.get('DERIV_TOKEN', '')
         
         # Deriv WebSocket endpoints
         self.ws_url = f"wss://ws.derivws.com/websockets/v3?app_id={self.app_id}"
         self.ws_url_demo = f"wss://ws.derivws.com/websockets/v3?app_id={self.app_id}&l=en&brand=deriv"
         
         self.websocket = None
+
+    def _resolve_api_token(self, api_token: Optional[str]) -> str:
+        """Resolve explicit token or fallback to DERIV_TOKEN from environment."""
+        token = (api_token or self.default_api_token or "").strip()
+        if not token:
+            raise DerivAPIError("Deriv API token is required (pass api_token or set DERIV_TOKEN).")
+        return token
     
     async def connect(self, demo: bool = False):
         """
@@ -92,7 +100,7 @@ class DerivClient:
         
         return response
     
-    async def authorize(self, api_token: str) -> Dict[str, Any]:
+    async def authorize(self, api_token: Optional[str] = None) -> Dict[str, Any]:
         """
         Authorize user with API token.
         
@@ -103,7 +111,7 @@ class DerivClient:
             Authorization response with user info
         """
         request = {
-            "authorize": api_token
+            "authorize": self._resolve_api_token(api_token)
         }
         
         response = await self.send_request(request)
@@ -115,7 +123,7 @@ class DerivClient:
     
     async def fetch_profit_table(
         self,
-        api_token: str,
+        api_token: Optional[str] = None,
         limit: int = 100,
         offset: int = 0,
         date_from: Optional[int] = None,
@@ -125,7 +133,7 @@ class DerivClient:
         Fetch user's profit table (completed trades).
         
         Args:
-            api_token: User's Deriv API token
+            api_token: User's Deriv API token (optional if DERIV_TOKEN is set)
             limit: Max number of trades to fetch (max 500)
             offset: Pagination offset
             date_from: Unix timestamp (optional)
@@ -246,14 +254,14 @@ class DerivClient:
     
     async def fetch_all_trades(
         self,
-        api_token: str,
+        api_token: Optional[str] = None,
         days_back: int = 30
     ) -> List[Dict[str, Any]]:
         """
         Fetch all trades from the last N days (handles pagination).
         
         Args:
-            api_token: User's Deriv API token
+            api_token: User's Deriv API token (optional if DERIV_TOKEN is set)
             days_back: How many days of history to fetch
         
         Returns:
@@ -291,7 +299,7 @@ class DerivClient:
     def sync_trades_to_database(
         self,
         user_id: str,
-        api_token: str,
+        api_token: Optional[str] = None,
         days_back: int = 30
     ) -> Dict[str, Any]:
         """
@@ -299,7 +307,7 @@ class DerivClient:
         
         Args:
             user_id: Our UserProfile UUID
-            api_token: User's Deriv API token
+            api_token: User's Deriv API token (optional if DERIV_TOKEN is set)
             days_back: Days of history to sync
         
         Returns:
@@ -394,14 +402,14 @@ class DerivClient:
     
     async def subscribe_to_transactions(
         self,
-        api_token: str,
-        callback: callable
+        callback: callable,
+        api_token: Optional[str] = None,
     ):
         """
         Subscribe to real-time transaction updates.
         
         Args:
-            api_token: User's Deriv API token
+            api_token: User's Deriv API token (optional if DERIV_TOKEN is set)
             callback: Function to call when new transaction arrives
         """
         if not self.websocket:
