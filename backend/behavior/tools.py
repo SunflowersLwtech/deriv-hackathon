@@ -6,16 +6,8 @@ from datetime import datetime, timedelta
 from django.utils import timezone
 from .models import UserProfile, Trade, BehavioralMetric
 from .detection import analyze_all_patterns
+from agents.llm_client import get_llm_client
 import json
-import os
-from openai import OpenAI
-
-
-# Initialize DeepSeek client
-deepseek_client = OpenAI(
-    api_key=os.environ.get("DEEPSEEK_API_KEY", ""),
-    base_url="https://api.deepseek.com"
-)
 
 
 def get_recent_trades(user_id: str, hours: int = 24) -> List[Dict[str, Any]]:
@@ -209,18 +201,17 @@ Generate a JSON response with:
 }}"""
 
     try:
-        response = deepseek_client.chat.completions.create(
-            model="deepseek-chat",
-            messages=[
-                {"role": "system", "content": "You are a behavioral trading coach. You help traders recognize patterns without being judgmental."},
-                {"role": "user", "content": prompt}
-            ],
+        llm = get_llm_client()
+        response = llm.simple_chat(
+            system_prompt="You are a behavioral trading coach. You help traders recognize patterns without being judgmental.",
+            user_message=prompt,
             temperature=0.7,
             max_tokens=300
         )
         
-        # Parse JSON response
-        response_text = response.choices[0].message.content.strip()
+        # Parse response text (simple_chat returns string directly)
+        response_text = response.strip()
+        
         # Remove markdown code blocks if present
         if response_text.startswith("```json"):
             response_text = response_text.split("```json")[1].split("```")[0].strip()

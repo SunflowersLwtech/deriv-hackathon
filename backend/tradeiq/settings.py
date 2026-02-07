@@ -82,10 +82,12 @@ if os.environ.get("DATABASE_URL"):
                 )
             }
         except Exception as parse_err:
-            if "ParseError" in type(parse_err).__name__ or "not a valid url" in str(parse_err).lower():
-                import sys
+            import sys
+            error_msg = str(parse_err).lower()
+            if "parseerror" in type(parse_err).__name__.lower() or "not a valid url" in error_msg or "port could not be cast" in error_msg:
                 print("DATABASE_URL parse error (often due to special chars in password).", file=sys.stderr)
                 print("URL-encode the password in .env: @ -> %40, # -> %23, : -> %3A, / -> %2F", file=sys.stderr)
+                print(f"Error: {parse_err}", file=sys.stderr)
                 DATABASES = {"default": _default_db}
             else:
                 raise
