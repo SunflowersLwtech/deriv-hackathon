@@ -53,9 +53,7 @@ export default function ChatPanel() {
       const response = await api.chatWithHistory(input.trim(), "auto", history);
 
       // Backend returns { message, agent_type, tools_used, source }
-      const replyText = (response as Record<string, unknown>).message as string
-        || (response as Record<string, unknown>).reply as string
-        || "I couldn't generate a response.";
+      const replyText = response.message || response.reply || "I couldn't generate a response.";
 
       const aiMessage: ChatMessageType = {
         role: "assistant",
