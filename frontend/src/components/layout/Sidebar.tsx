@@ -1,8 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import { cn } from "@/lib/utils";
-import ChatPanel from "@/components/chat/ChatPanel";
+
+const ChatPanel = dynamic(() => import("@/components/chat/ChatPanel"), {
+  loading: () => (
+    <div className="flex items-center justify-center h-full">
+      <span className="text-xs text-muted mono-data">Loading chat...</span>
+    </div>
+  ),
+  ssr: false,
+});
 
 interface SidebarProps {
   defaultOpen?: boolean;
