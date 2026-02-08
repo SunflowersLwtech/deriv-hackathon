@@ -206,6 +206,7 @@ class ApiClient {
     return this.request<ScenarioAnalysis>("/demo/analyze/", {
       method: "POST",
       body: { scenario },
+      timeoutMs: TIMEOUT_LLM,
     });
   }
 
@@ -226,6 +227,7 @@ class ApiClient {
     return this.request<GenerateContentResponse>("/content/generate/", {
       method: "POST",
       body: data,
+      timeoutMs: TIMEOUT_LLM,
     });
   }
 
@@ -233,6 +235,7 @@ class ApiClient {
     return this.request<PublishResponse>("/content/publish-bluesky/", {
       method: "POST",
       body: { content, type: postType },
+      timeoutMs: TIMEOUT_LLM,
     });
   }
 
@@ -241,6 +244,7 @@ class ApiClient {
     return this.request<ChatResponse>("/chat/ask/", {
       method: "POST",
       body: { message, conversation_history: conversationHistory },
+      timeoutMs: TIMEOUT_LLM,
     });
   }
 
@@ -253,6 +257,7 @@ class ApiClient {
     return this.request<LoadScenarioResponse>("/demo/load-scenario/", {
       method: "POST",
       body: { scenario },
+      timeoutMs: TIMEOUT_LLM,
     });
   }
 
@@ -260,6 +265,7 @@ class ApiClient {
     return this.request<WowMomentResponse>("/demo/wow-moment/", {
       method: "POST",
       body: { user_id: userId, instrument },
+      timeoutMs: TIMEOUT_BRIEF,
     });
   }
 
@@ -268,6 +274,7 @@ class ApiClient {
     return this.request<PipelineResponse>("/agents/pipeline/", {
       method: "POST",
       body: params,
+      timeoutMs: TIMEOUT_BRIEF,
     });
   }
 
@@ -275,6 +282,7 @@ class ApiClient {
     return this.request<MonitorResponse>("/agents/monitor/", {
       method: "POST",
       body: { instruments, custom_event: customEvent },
+      timeoutMs: TIMEOUT_LLM,
     });
   }
 
@@ -282,6 +290,7 @@ class ApiClient {
     return this.request<AnalysisReportResponse>("/agents/analyst/", {
       method: "POST",
       body: event,
+      timeoutMs: TIMEOUT_LLM,
     });
   }
 
@@ -289,6 +298,7 @@ class ApiClient {
     return this.request<PersonalizedInsightResponse>("/agents/advisor/", {
       method: "POST",
       body: { analysis_report: analysisReport, user_portfolio: userPortfolio },
+      timeoutMs: TIMEOUT_LLM,
     });
   }
 
@@ -296,6 +306,7 @@ class ApiClient {
     return this.request<MarketCommentaryResponse>("/agents/content-gen/", {
       method: "POST",
       body: { analysis_report: analysisReport, personalized_insight: personalizedInsight },
+      timeoutMs: TIMEOUT_LLM,
     });
   }
 
@@ -304,6 +315,7 @@ class ApiClient {
     return this.request<BehavioralSentinelResponse>("/agents/sentinel/", {
       method: "POST",
       body: params,
+      timeoutMs: TIMEOUT_LLM,
     });
   }
 
@@ -312,6 +324,7 @@ class ApiClient {
     return this.request<DerivSyncResponse>("/behavior/trades/sync_deriv/", {
       method: "POST",
       body: { user_id: userId, days_back: daysBack },
+      timeoutMs: TIMEOUT_LLM,
     });
   }
 
@@ -363,6 +376,7 @@ class ApiClient {
   async chatWithHistory(message: string, agentType: string = "auto", history?: Array<{role: string; content: string}>, userId?: string) {
     return this.request<ChatResponse>("/agents/chat/", {
       method: "POST",
+      timeoutMs: TIMEOUT_LLM,
       body: { message, agent_type: agentType, history, user_id: userId },
     });
   }
