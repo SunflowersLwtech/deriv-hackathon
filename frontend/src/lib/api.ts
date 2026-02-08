@@ -27,6 +27,8 @@ interface ApiOptions {
   headers?: Record<string, string>;
   token?: string;
   requiresAuth?: boolean;
+  /** Request timeout in ms. Defaults to 15s; slow endpoints should set higher. */
+  timeoutMs?: number;
 }
 
 class ApiClient {
@@ -40,13 +42,14 @@ class ApiClient {
     this.baseUrl = baseUrl?.trim() ? normalizeApiBase(baseUrl) : undefined;
   }
 
-  /** Deduplicate concurrent GET requests to the same endpoint. */
+  /** Deduplicate concurrent requests to the same logical endpoint. */
   private dedup<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    const existing = this._inflight.get(key);
+    const normalized = key.toLowerCase().trim();
+    const existing = this._inflight.get(normalized);
     if (existing) return existing as Promise<T>;
 
-    const promise = fn().finally(() => this._inflight.delete(key));
-    this._inflight.set(key, promise);
+    const promise = fn().finally(() => this._inflight.delete(normalized));
+    this._inflight.set(normalized, promise);
     return promise;
   }
 
@@ -74,7 +77,7 @@ class ApiClient {
   }
 
   private async request<T>(endpoint: string, options: ApiOptions = {}): Promise<T> {
-    const { method = "GET", body, headers = {}, token, requiresAuth = false } = options;
+    const { method = "GET", body, headers = {}, token, requiresAuth = false, timeoutMs = 15000 } = options;
 
     const requestHeaders: Record<string, string> = {
       "Content-Type": "application/json",
@@ -88,13 +91,11 @@ class ApiClient {
       throw new ApiError(401, "Authentication required. Please sign in and try again.");
     }
 
-    // 30-second timeout: Render free tier cold starts can take 20-30s,
-    // and market/brief needs multiple Deriv WebSocket round-trips on top
     const response = await fetch(`${this.getBaseUrl()}${endpoint}`, {
       method,
       headers: requestHeaders,
       body: body ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     if (!response.ok) {
@@ -117,6 +118,7 @@ class ApiClient {
       this.request<MarketBrief>("/market/brief/", {
         method: "POST",
         body: { instruments },
+        timeoutMs: 45000,  // parallel Deriv WS + LLM summary
       })
     );
   }
@@ -125,6 +127,7 @@ class ApiClient {
     return this.request<MarketAnalysis>("/market/ask/", {
       method: "POST",
       body: { question },
+      timeoutMs: 30000,  // LLM reasoning
     });
   }
 
@@ -146,6 +149,7 @@ class ApiClient {
     return this.request<MarketTechnicals>("/market/technicals/", {
       method: "POST",
       body: { instrument, timeframe },
+      timeoutMs: 20000,  // Deriv WS history + computation
     });
   }
 
@@ -153,6 +157,7 @@ class ApiClient {
     return this.request<MarketSentiment>("/market/sentiment/", {
       method: "POST",
       body: { instrument },
+      timeoutMs: 30000,  // news APIs + LLM sentiment
     });
   }
 
@@ -182,6 +187,7 @@ class ApiClient {
       method: "POST",
       body: { user_id: userId, hours },
       requiresAuth: true,
+      timeoutMs: 25000,  // pattern analysis + LLM nudge
     });
   }
 

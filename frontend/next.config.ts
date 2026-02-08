@@ -25,7 +25,8 @@ const nextConfig: NextConfig = {
   // Cache static assets aggressively on Render
   headers: async () => [
     {
-      source: "/:all*(svg|jpg|png|webp|avif|ico|woff|woff2)",
+      // Match any path ending with a static asset extension
+      source: "/:path*.:ext(svg|jpg|png|webp|avif|ico|woff|woff2)",
       headers: [
         {
           key: "Cache-Control",

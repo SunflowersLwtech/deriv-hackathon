@@ -7,11 +7,15 @@ from agents.llm_client import get_llm_client
 from agents.prompts import SYSTEM_PROMPT_MARKET
 from .models import MarketInsight
 import json
+import logging
 import os
 import math
 import requests
 import asyncio
 import threading
+from concurrent.futures import ThreadPoolExecutor
+
+logger = logging.getLogger(__name__)
 from datetime import datetime, timezone
 
 
@@ -151,33 +155,38 @@ def fetch_price_data(instrument: str) -> Dict[str, Any]:
     Returns:
         Dict with price, change, etc.
     """
-    # Check cache first
+    # Try to import cache helpers (gracefully skip if Redis is not configured)
+    _cache_available = False
     try:
         from .cache import get_cached_price, set_cached_price
-        cached = get_cached_price(instrument)
-        if cached is not None:
-            return {
-                "instrument": instrument,
-                "price": cached,
-                "timestamp": datetime.now().isoformat(),
-                "source": "deriv",
-                "cached": True,
-            }
+        _cache_available = True
     except Exception:
         pass
 
+    # Check cache first (short 5s TTL for live prices — deduplicates the burst
+    # of concurrent requests that fire when dashboard hooks mount at once.
+    # This differs from cache.py's 300s default which is for longer-lived data.)
+    if _cache_available:
+        try:
+            cached = get_cached_price(instrument)
+            if cached is not None:
+                return {
+                    "instrument": instrument,
+                    "price": cached,
+                    "timestamp": datetime.now().isoformat(),
+                    "source": "deriv",
+                    "cached": True,
+                }
+        except Exception as exc:
+            logger.debug("Redis cache read failed for %s: %s", instrument, exc)
+
     try:
         result = _run_async_in_new_thread(_fetch_deriv_price_async(instrument))
-        # Cache successful result (short 5s TTL for live prices — we want
-        # near-real-time data but still deduplicate the burst of concurrent
-        # requests that fire when the dashboard mounts multiple hooks at once.
-        # This differs from cache.py's 300s default which is for longer-lived data.)
-        if result and result.get("price") is not None:
+        if _cache_available and result and result.get("price") is not None:
             try:
-                from .cache import set_cached_price
                 set_cached_price(instrument, result["price"], ttl_seconds=5)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Redis cache write failed for %s: %s", instrument, exc)
         return result
     except Exception as e:
         return {
@@ -447,7 +456,6 @@ def search_news(query: str, limit: int = 5) -> List[Dict[str, Any]]:
         List of news articles
     """
     # Fetch from both sources in parallel
-    from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=2) as executor:
         newsapi_future = executor.submit(_search_newsapi, query, limit)
         finnhub_future = executor.submit(_search_finnhub_news, query, limit)
@@ -746,32 +754,27 @@ def generate_market_brief(instruments: List[str] = None) -> Dict[str, Any]:
             "source": "database",
         }
 
-    # Fetch all instruments in parallel instead of serial loop
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    # Fetch all instruments in parallel (preserving input order via executor.map)
 
     def _fetch_instrument(inst: str) -> Dict[str, Any]:
-        price = fetch_price_data(inst)
-        history = fetch_price_history(inst, timeframe="1h", count=24)
-        return {
-            "symbol": inst,
-            "price": price.get("price"),
-            "change": history.get("change"),
-            "change_percent": history.get("change_percent"),
-            "source": price.get("source", "deriv"),
-        }
+        try:
+            price = fetch_price_data(inst)
+            history = fetch_price_history(inst, timeframe="1h", count=24)
+            return {
+                "symbol": inst,
+                "price": price.get("price"),
+                "change": history.get("change"),
+                "change_percent": history.get("change_percent"),
+                "source": price.get("source", "deriv"),
+            }
+        except Exception:
+            return {
+                "symbol": inst, "price": None, "change": None,
+                "change_percent": None, "source": "deriv",
+            }
 
-    instrument_data = []
     with ThreadPoolExecutor(max_workers=6) as executor:
-        futures = {executor.submit(_fetch_instrument, inst): inst for inst in instruments[:6]}
-        for future in as_completed(futures):
-            try:
-                instrument_data.append(future.result())
-            except Exception:
-                inst = futures[future]
-                instrument_data.append({
-                    "symbol": inst, "price": None, "change": None,
-                    "change_percent": None, "source": "deriv",
-                })
+        instrument_data = list(executor.map(_fetch_instrument, instruments[:6]))
 
     data_summary = "\n".join([
         f"- {d['symbol']}: {d['price'] or 'N/A'}"

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useApiWithFallback } from "./useApiWithFallback";
 import api from "@/lib/api";
+import type { EconomicEvent, EconomicCalendarResponse, TopHeadlinesResponse } from "@/lib/api";
 
 export interface TickerItem {
   symbol: string;
@@ -64,7 +65,9 @@ export function useTickerData(updateInterval = 10000) {
 
   // Use the market brief endpoint (1 request) instead of N individual
   // getLivePrice calls. The brief already fetches all instrument prices
-  // in parallel on the backend.
+  // in parallel on the backend. Watchlist personalization is preserved —
+  // generate_market_brief(instruments=None) discovers instruments from
+  // user watchlists and recent trades server-side.
   const fetchTickers = useCallback(async () => {
     const brief = await api.getMarketBrief();
     const instruments = brief.instruments || [];
@@ -177,9 +180,7 @@ export function useInstrumentUniverse() {
   });
 }
 
-// ─── New hooks for Finnhub / Deriv / NewsAPI ───────────────────────
-
-import type { EconomicEvent, EconomicCalendarResponse, TopHeadlinesResponse } from "@/lib/api";
+// ─── Finnhub / Deriv / NewsAPI hooks ────────────────────────────────
 
 export function useEconomicCalendar() {
   const fetchCalendar = useCallback(async () => {
