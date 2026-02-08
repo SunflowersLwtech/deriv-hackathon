@@ -180,6 +180,8 @@ def market_monitor_detect(
     # ── Automatic scan with Redis price caching ──
     instruments = instruments or MONITOR_INSTRUMENTS
     events: List[VolatilityEvent] = []
+    # Track all scanned instruments so we can fallback to the largest mover
+    all_scanned: List[VolatilityEvent] = []
 
     for inst in instruments:
         try:
@@ -202,31 +204,44 @@ def market_monitor_detect(
             # Always update the cached price
             set_cached_price(inst, price, ttl_seconds=300)
 
+            ve = VolatilityEvent(
+                instrument=inst,
+                current_price=price,
+                price_change_pct=round(change_pct, 2),
+                direction="spike" if change_pct > 0 else "drop",
+                magnitude="medium",
+                raw_data={
+                    **price_data,
+                    "previous_price": previous_price,
+                    "source": "redis_delta",
+                },
+            )
+            all_scanned.append(ve)
+
             threshold = _threshold(inst)
             if abs(change_pct) >= threshold:
-                events.append(
-                    VolatilityEvent(
-                        instrument=inst,
-                        current_price=price,
-                        price_change_pct=round(change_pct, 2),
-                        direction="spike" if change_pct > 0 else "drop",
-                        magnitude="high" if abs(change_pct) >= threshold * 2 else "medium",
-                        raw_data={
-                            **price_data,
-                            "previous_price": previous_price,
-                            "source": "redis_delta",
-                        },
-                    )
-                )
+                ve.magnitude = "high" if abs(change_pct) >= threshold * 2 else "medium"
+                events.append(ve)
         except Exception as exc:
             print(f"[MarketMonitor] Error scanning {inst}: {exc}")
 
-    if not events:
-        return None
+    if events:
+        # Return the most significant event above threshold
+        events.sort(key=lambda e: abs(e.price_change_pct), reverse=True)
+        return events[0]
 
-    # Return the most significant event
-    events.sort(key=lambda e: abs(e.price_change_pct), reverse=True)
-    return events[0]
+    # Fallback: no instrument exceeded its threshold, but we still want
+    # the pipeline to run in auto-scan mode. Pick the largest mover and
+    # flag it as a low-magnitude observation so the rest of the pipeline
+    # can still produce useful analysis.
+    if all_scanned:
+        all_scanned.sort(key=lambda e: abs(e.price_change_pct), reverse=True)
+        best = all_scanned[0]
+        best.magnitude = "medium"
+        best.raw_data["source"] = "auto_fallback"
+        return best
+
+    return None
 
 
 # ─── Agent 2: Analyst ─────────────────────────────────────────────────

@@ -27,6 +27,7 @@ const TIMEOUT_TECHNICALS = 20_000;  // Deriv WS history + computation
 const TIMEOUT_ANALYSIS = 25_000;    // pattern analysis + LLM nudge
 const TIMEOUT_LLM = 30_000;        // LLM reasoning / sentiment
 const TIMEOUT_BRIEF = 45_000;      // parallel Deriv WS + LLM summary
+const TIMEOUT_PIPELINE = 90_000;   // full 5-agent pipeline (Monitor→Analyst→Advisor→Sentinel→Content)
 
 interface ApiOptions {
   method?: string;
@@ -265,7 +266,7 @@ class ApiClient {
     return this.request<WowMomentResponse>("/demo/wow-moment/", {
       method: "POST",
       body: { user_id: userId, instrument },
-      timeoutMs: TIMEOUT_BRIEF,
+      timeoutMs: TIMEOUT_PIPELINE,
     });
   }
 
@@ -274,7 +275,7 @@ class ApiClient {
     return this.request<PipelineResponse>("/agents/pipeline/", {
       method: "POST",
       body: params,
-      timeoutMs: TIMEOUT_BRIEF,
+      timeoutMs: TIMEOUT_PIPELINE,
     });
   }
 
