@@ -58,6 +58,9 @@ const NAME_MAP: Record<string, string> = {
 };
 
 
+// Default interval increased from 5s to 10s: each tick now uses getMarketBrief()
+// which is heavier than individual price fetches, so polling less frequently
+// reduces backend load while still providing near-real-time updates.
 export function useTickerData(updateInterval = 10000) {
   const [tickers, setTickers] = useState<TickerItem[]>(FALLBACK_TICKERS);
   const [isUsingMock, setIsUsingMock] = useState(true);
