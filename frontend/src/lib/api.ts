@@ -113,7 +113,7 @@ class ApiClient {
 
   // Safe to dedup: getMarketBrief is a read-only query despite using POST (body params)
   async getMarketBrief(instruments?: string[]) {
-    const key = `brief:${instruments?.join(",") ?? ""}`;
+    const key = `brief:${instruments ? [...instruments].sort().join(",") : ""}`;
     return this.dedup(key, () =>
       this.request<MarketBrief>("/market/brief/", {
         method: "POST",

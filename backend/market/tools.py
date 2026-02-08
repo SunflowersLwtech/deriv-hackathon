@@ -18,6 +18,13 @@ from concurrent.futures import ThreadPoolExecutor
 logger = logging.getLogger(__name__)
 from datetime import datetime, timezone
 
+# Gracefully handle missing Redis — cache is optional
+try:
+    from .cache import get_cached_price, set_cached_price
+    _CACHE_AVAILABLE = True
+except ImportError:
+    _CACHE_AVAILABLE = False
+
 
 # Deriv symbol mapping: user-friendly -> Deriv API symbol
 DERIV_SYMBOLS = {
@@ -155,18 +162,10 @@ def fetch_price_data(instrument: str) -> Dict[str, Any]:
     Returns:
         Dict with price, change, etc.
     """
-    # Try to import cache helpers (gracefully skip if Redis is not configured)
-    _cache_available = False
-    try:
-        from .cache import get_cached_price, set_cached_price
-        _cache_available = True
-    except Exception:
-        pass
-
     # Check cache first (short 5s TTL for live prices — deduplicates the burst
     # of concurrent requests that fire when dashboard hooks mount at once.
     # This differs from cache.py's 300s default which is for longer-lived data.)
-    if _cache_available:
+    if _CACHE_AVAILABLE:
         try:
             cached = get_cached_price(instrument)
             if cached is not None:
@@ -182,7 +181,7 @@ def fetch_price_data(instrument: str) -> Dict[str, Any]:
 
     try:
         result = _run_async_in_new_thread(_fetch_deriv_price_async(instrument))
-        if _cache_available and result and result.get("price") is not None:
+        if _CACHE_AVAILABLE and result and result.get("price") is not None:
             try:
                 set_cached_price(instrument, result["price"], ttl_seconds=5)
             except Exception as exc:
@@ -767,7 +766,8 @@ def generate_market_brief(instruments: List[str] = None) -> Dict[str, Any]:
                 "change_percent": history.get("change_percent"),
                 "source": price.get("source", "deriv"),
             }
-        except Exception:
+        except Exception as exc:
+            logger.warning("Failed to fetch data for %s: %s", inst, exc)
             return {
                 "symbol": inst, "price": None, "change": None,
                 "change_percent": None, "source": "deriv",
