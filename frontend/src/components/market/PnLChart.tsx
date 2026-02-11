@@ -66,6 +66,19 @@ export default function PnLChart({
           const tradesResp = await api.getTrades();
           const trades = Array.isArray(tradesResp) ? tradesResp : tradesResp.results || [];
 
+          if (trades.length === 0) {
+            // No trades yet — show default instrument price chart instead of blank
+            const history = await api.getMarketHistory("frxEURUSD", "1h", 120);
+            const chartData = (history.candles || []).map((candle) => ({
+              time: formatTimeLabel(candle.time),
+              value: Number(candle.close || 0),
+            }));
+            if (!cancelled) {
+              setData(chartData);
+            }
+            return;
+          }
+
           const sorted = [...trades].sort((a, b) => {
             const at = new Date(a.opened_at || a.created_at || Date.now()).getTime();
             const bt = new Date(b.opened_at || b.created_at || Date.now()).getTime();
