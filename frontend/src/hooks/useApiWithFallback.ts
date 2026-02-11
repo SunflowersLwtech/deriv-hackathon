@@ -55,8 +55,16 @@ export function useApiWithFallback<T>({
   fallbackRef.current = fallbackData;
   const cacheKeyRef = useRef(cacheKey);
   cacheKeyRef.current = cacheKey;
+  // Throttle guard: prevent the same hook from fetching more than once per 3 seconds,
+  // regardless of re-renders or effect re-runs.
+  const lastFetchRef = useRef(0);
+  const isFetchingRef = useRef(false);
 
   const fetchData = useCallback(async () => {
+    const now = Date.now();
+    if (now - lastFetchRef.current < 3000 || isFetchingRef.current) return;
+    lastFetchRef.current = now;
+    isFetchingRef.current = true;
     try {
       const result = await fetcher();
       if (mountedRef.current) {
@@ -70,10 +78,9 @@ export function useApiWithFallback<T>({
       }
     } catch (err) {
       if (mountedRef.current) {
+        // Only set fallback data if we haven't fetched successfully yet
         setIsUsingMock((prev) => {
-          if (!prev) {
-            return false;
-          }
+          if (!prev) return false;
           setData(fallbackRef.current);
           return true;
         });
@@ -81,6 +88,7 @@ export function useApiWithFallback<T>({
         setError(err instanceof Error ? err.message : "Backend unavailable");
       }
     } finally {
+      isFetchingRef.current = false;
       if (mountedRef.current) {
         setIsLoading(false);
       }
