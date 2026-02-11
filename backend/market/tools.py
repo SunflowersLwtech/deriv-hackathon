@@ -352,32 +352,69 @@ def _search_newsapi(query: str, limit: int) -> List[Dict[str, Any]]:
         return []
 
 
-def fetch_top_headlines(category: str = "business", country: str = "us", limit: int = 10) -> List[Dict[str, Any]]:
-    """Fetch top headlines from NewsAPI /v2/top-headlines."""
-    api_key = os.environ.get("NEWS_API_KEY", "")
+def _fetch_finnhub_headlines(limit: int = 10) -> List[Dict[str, Any]]:
+    """Fallback: fetch general market news from Finnhub (free tier)."""
+    api_key = os.environ.get("FINNHUB_API_KEY", "")
     if not api_key:
         return []
     try:
         response = requests.get(
-            "https://newsapi.org/v2/top-headlines",
-            params={"category": category, "country": country, "apiKey": api_key, "pageSize": limit},
+            "https://finnhub.io/api/v1/news",
+            params={"category": "general", "token": api_key},
             timeout=5,
         )
         if response.status_code != 200:
             return []
+        items = response.json()
+        if not isinstance(items, list):
+            return []
         return [
             {
-                "title": a.get("title", ""),
-                "description": a.get("description", ""),
-                "url": a.get("url", ""),
-                "publishedAt": a.get("publishedAt", ""),
-                "source": a.get("source", {}).get("name", ""),
+                "title": (item.get("headline") or "").strip(),
+                "description": (item.get("summary") or "").strip(),
+                "url": item.get("url", ""),
+                "publishedAt": (
+                    datetime.fromtimestamp(item["datetime"], tz=timezone.utc).isoformat()
+                    if isinstance(item.get("datetime"), (int, float)) and item["datetime"] > 0
+                    else ""
+                ),
+                "source": item.get("source", ""),
             }
-            for a in response.json().get("articles", [])[:limit]
+            for item in items[:limit]
+            if (item.get("headline") or "").strip()
         ]
-    except Exception as e:
-        print(f"NewsAPI headlines error: {e}")
+    except Exception:
         return []
+
+
+def fetch_top_headlines(category: str = "business", country: str = "us", limit: int = 10) -> List[Dict[str, Any]]:
+    """Fetch top headlines from NewsAPI, falling back to Finnhub news."""
+    api_key = os.environ.get("NEWS_API_KEY", "")
+    if api_key:
+        try:
+            response = requests.get(
+                "https://newsapi.org/v2/top-headlines",
+                params={"category": category, "country": country, "apiKey": api_key, "pageSize": limit},
+                timeout=5,
+            )
+            if response.status_code == 200:
+                articles = [
+                    {
+                        "title": a.get("title", ""),
+                        "description": a.get("description", ""),
+                        "url": a.get("url", ""),
+                        "publishedAt": a.get("publishedAt", ""),
+                        "source": a.get("source", {}).get("name", ""),
+                    }
+                    for a in response.json().get("articles", [])[:limit]
+                ]
+                if articles:
+                    return articles
+        except Exception:
+            pass
+
+    # Fallback to Finnhub news (free tier, no rate limit issues)
+    return _fetch_finnhub_headlines(limit)
 
 
 def _finnhub_category_for_query(query: str) -> str:
@@ -747,12 +784,11 @@ def generate_market_brief(instruments: List[str] = None) -> Dict[str, Any]:
         instruments = list(dict.fromkeys(discovered))
 
     if not instruments:
-        return {
-            "summary": "No instruments available from database watchlists or recent trades.",
-            "instruments": [],
-            "timestamp": datetime.now().isoformat(),
-            "source": "database",
-        }
+        # Fallback to popular instruments when DB has no watchlists/trades
+        instruments = [
+            "frxEURUSD", "frxGBPUSD", "frxUSDJPY",
+            "cryBTCUSD", "frxXAUUSD", "R_100",
+        ]
 
     # Fetch all instruments in parallel (preserving input order via executor.map)
 
@@ -853,6 +889,8 @@ def fetch_economic_calendar() -> Dict[str, Any]:
             params={"from": from_date, "to": to_date, "token": api_key},
             timeout=8,
         )
+        if response.status_code == 403:
+            return {"events": [], "note": "Economic calendar requires Finnhub premium plan"}
         if response.status_code != 200:
             return {"events": [], "error": f"Finnhub HTTP {response.status_code}"}
 
