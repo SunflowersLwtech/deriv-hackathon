@@ -154,6 +154,7 @@ export function useMarketOverview() {
     fetcher: fetchOverview,
     fallbackData: FALLBACK_MARKET_DATA,
     pollInterval: 15000,
+    cacheKey: "market-overview",
   });
 }
 
@@ -176,20 +177,29 @@ export function useMarketInsights() {
     fetcher: fetchInsights,
     fallbackData: FALLBACK_INSIGHTS,
     pollInterval: 30000,
+    cacheKey: "market-insights",
   });
 }
 
+const DEFAULT_INSTRUMENTS = [
+  "frxEURUSD", "frxGBPUSD", "frxUSDJPY",
+  "cryBTCUSD", "frxXAUUSD", "R_100",
+];
+
 export function useInstrumentUniverse() {
   const fetchInstruments = useCallback(async () => {
-    const brief = await api.getMarketBrief();
-    const symbols = (brief.instruments || []).map((item) => item.symbol).filter(Boolean);
-    return Array.from(new Set(symbols));
+    // Use the fast /market/instruments/ endpoint (simple GET, no LLM/WS)
+    // instead of getMarketBrief which is slow (6 Deriv WS + LLM summary).
+    const resp = await api.getActiveSymbols();
+    const symbols = (resp.instruments || []).map((s) => s.symbol || s.display_name).filter(Boolean);
+    return symbols.length > 0 ? symbols.slice(0, 20) : DEFAULT_INSTRUMENTS;
   }, []);
 
   return useApiWithFallback<string[]>({
     fetcher: fetchInstruments,
-    fallbackData: [],
-    pollInterval: 60000,
+    fallbackData: DEFAULT_INSTRUMENTS,
+    pollInterval: 120000,
+    cacheKey: "instrument-universe",
   });
 }
 
@@ -204,7 +214,8 @@ export function useEconomicCalendar() {
   return useApiWithFallback<EconomicEvent[]>({
     fetcher: fetchCalendar,
     fallbackData: [],
-    pollInterval: 300000, // 5 minutes
+    pollInterval: 300000,
+    cacheKey: "economic-calendar",
   });
 }
 
@@ -217,6 +228,7 @@ export function useTopHeadlines(limit = 8) {
   return useApiWithFallback<Array<{ title: string; description: string; url: string; publishedAt: string; source: string }>>({
     fetcher: fetchHeadlines,
     fallbackData: [],
+    cacheKey: "top-headlines",
     pollInterval: 120000, // 2 minutes
   });
 }

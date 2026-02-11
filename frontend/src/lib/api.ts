@@ -53,6 +53,12 @@ class ApiClient {
     this.baseUrl = baseUrl?.trim() ? normalizeApiBase(baseUrl) : undefined;
   }
 
+  /** Read stale cached data (even if expired) for instant mount display. */
+  getCached<T>(key: string): T | undefined {
+    const entry = this._cache.get(key.toLowerCase().trim());
+    return entry ? (entry.data as T) : undefined;
+  }
+
   /** Deduplicate concurrent requests AND cache results for `ttl` ms. */
   private dedup<T>(key: string, fn: () => Promise<T>, ttl = 5000): Promise<T> {
     const normalized = key.toLowerCase().trim();

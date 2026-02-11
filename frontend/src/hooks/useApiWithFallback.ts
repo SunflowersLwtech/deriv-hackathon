@@ -2,6 +2,10 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 
+// Module-level cache persists across page navigations (component unmount/remount).
+// This gives stale-while-revalidate behavior: show old data instantly, refresh in background.
+const _hookCache = new Map<string, unknown>();
+
 interface UseApiWithFallbackOptions<T> {
   /** Async function that calls the real API */
   fetcher: () => Promise<T>;
@@ -11,6 +15,8 @@ interface UseApiWithFallbackOptions<T> {
   pollInterval?: number;
   /** Whether to start fetching immediately */
   immediate?: boolean;
+  /** Cache key for persisting data across page navigations */
+  cacheKey?: string;
 }
 
 interface UseApiWithFallbackResult<T> {
@@ -33,17 +39,22 @@ export function useApiWithFallback<T>({
   fallbackData,
   pollInterval = 0,
   immediate = true,
+  cacheKey,
 }: UseApiWithFallbackOptions<T>): UseApiWithFallbackResult<T> {
-  const [data, setData] = useState<T>(fallbackData);
-  const [isLoading, setIsLoading] = useState(immediate);
+  // Initialize from module cache if available (survives page navigation)
+  const cached = cacheKey ? (_hookCache.get(cacheKey) as T | undefined) : undefined;
+  const hasCache = cached !== undefined;
+
+  const [data, setData] = useState<T>(hasCache ? cached : fallbackData);
+  const [isLoading, setIsLoading] = useState(!hasCache && immediate);
   const [error, setError] = useState<string | null>(null);
-  const [isUsingMock, setIsUsingMock] = useState(true);
-  const [isBackendOnline, setIsBackendOnline] = useState(false);
+  const [isUsingMock, setIsUsingMock] = useState(!hasCache);
+  const [isBackendOnline, setIsBackendOnline] = useState(hasCache);
   const mountedRef = useRef(true);
-  // Store fallbackData in a ref so it doesn't cause fetchData to be
-  // recreated on every render (callers often pass inline [] or {}).
   const fallbackRef = useRef(fallbackData);
   fallbackRef.current = fallbackData;
+  const cacheKeyRef = useRef(cacheKey);
+  cacheKeyRef.current = cacheKey;
 
   const fetchData = useCallback(async () => {
     try {
@@ -53,16 +64,16 @@ export function useApiWithFallback<T>({
         setIsUsingMock(false);
         setIsBackendOnline(true);
         setError(null);
+        if (cacheKeyRef.current) {
+          _hookCache.set(cacheKeyRef.current, result);
+        }
       }
     } catch (err) {
       if (mountedRef.current) {
-        // Keep existing real data if we had it before, otherwise use fallback
         setIsUsingMock((prev) => {
           if (!prev) {
-            // We had real data before, keep it but mark the error
             return false;
           }
-          // Never had real data, use fallback
           setData(fallbackRef.current);
           return true;
         });

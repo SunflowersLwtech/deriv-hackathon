@@ -61,6 +61,7 @@ export function usePersonas() {
     fetcher: fetchPersonas,
     fallbackData: [],
     pollInterval: 30000,
+    cacheKey: "personas",
   });
 }
 
@@ -100,6 +101,7 @@ export function usePosts() {
     fetcher: fetchPosts,
     fallbackData: [],
     pollInterval: 30000,
+    cacheKey: "posts",
   });
 }
 
@@ -132,5 +134,6 @@ export function useContentStats() {
       complianceRate: 100,
     },
     pollInterval: 30000,
+    cacheKey: "content-stats",
   });
 }
