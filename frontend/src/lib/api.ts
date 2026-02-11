@@ -45,18 +45,34 @@ class ApiClient {
   // In-flight request deduplication: prevents the same endpoint from being
   // called multiple times simultaneously (e.g., getUserProfiles from 3+ hooks)
   private _inflight = new Map<string, Promise<unknown>>();
+  // TTL cache: avoid re-fetching the same data when multiple hooks with
+  // different polling intervals hit the same endpoint seconds apart.
+  private _cache = new Map<string, { data: unknown; expiresAt: number }>();
 
   constructor(baseUrl?: string) {
     this.baseUrl = baseUrl?.trim() ? normalizeApiBase(baseUrl) : undefined;
   }
 
-  /** Deduplicate concurrent requests to the same logical endpoint. */
-  private dedup<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  /** Deduplicate concurrent requests AND cache results for `ttl` ms. */
+  private dedup<T>(key: string, fn: () => Promise<T>, ttl = 5000): Promise<T> {
     const normalized = key.toLowerCase().trim();
+
+    // Return cached result if still fresh
+    const cached = this._cache.get(normalized);
+    if (cached && Date.now() < cached.expiresAt) {
+      return Promise.resolve(cached.data as T);
+    }
+
+    // Return in-flight promise if one exists
     const existing = this._inflight.get(normalized);
     if (existing) return existing as Promise<T>;
 
-    const promise = fn().finally(() => this._inflight.delete(normalized));
+    const promise = fn()
+      .then((data) => {
+        this._cache.set(normalized, { data, expiresAt: Date.now() + ttl });
+        return data;
+      })
+      .finally(() => this._inflight.delete(normalized));
     this._inflight.set(normalized, promise);
     return promise;
   }
@@ -116,7 +132,9 @@ class ApiClient {
 
   // Market endpoints
   async getMarketInsights() {
-    return this.request<MarketInsightsResponse>("/market/insights/");
+    return this.dedup("insights", () =>
+      this.request<MarketInsightsResponse>("/market/insights/")
+    , 10000);
   }
 
   // Safe to dedup: getMarketBrief is a read-only query despite using POST (body params).
@@ -131,7 +149,7 @@ class ApiClient {
         body: { instruments: normalized },
         timeoutMs: TIMEOUT_BRIEF,
       })
-    );
+    , 8000);
   }
 
   async askMarketAnalyst(question: string) {
@@ -176,30 +194,32 @@ class ApiClient {
   async getUserProfiles() {
     return this.dedup("profiles", () =>
       this.request<PaginatedResponse<UserProfile>>("/behavior/profiles/")
-    );
+    , 8000);
   }
 
   async getTrades(userId?: string) {
     const query = userId ? `?user_id=${userId}` : "";
     return this.dedup(`trades:${userId ?? ""}`, () =>
       this.request<PaginatedResponse<Trade>>(`/behavior/trades/${query}`)
-    );
+    , 8000);
   }
 
   async getBehavioralMetrics(userId?: string) {
     const query = userId ? `?user_id=${userId}` : "";
     return this.dedup(`metrics:${userId ?? ""}`, () =>
       this.request<PaginatedResponse<BehavioralMetric>>(`/behavior/metrics/${query}`)
-    );
+    , 8000);
   }
 
   async analyzeBatch(userId: string, hours: number = 24) {
-    return this.request<BatchAnalysis>("/behavior/trades/analyze_batch/", {
-      method: "POST",
-      body: { user_id: userId, hours },
-      requiresAuth: true,
-      timeoutMs: TIMEOUT_ANALYSIS,
-    });
+    return this.dedup(`analyze:${userId}:${hours}`, () =>
+      this.request<BatchAnalysis>("/behavior/trades/analyze_batch/", {
+        method: "POST",
+        body: { user_id: userId, hours },
+        requiresAuth: true,
+        timeoutMs: TIMEOUT_ANALYSIS,
+      })
+    , 10000);
   }
 
   // Demo scenario endpoints
@@ -217,11 +237,15 @@ class ApiClient {
 
   // Content endpoints
   async getPersonas() {
-    return this.request<PaginatedResponse<AIPersona>>("/content/personas/");
+    return this.dedup("personas", () =>
+      this.request<PaginatedResponse<AIPersona>>("/content/personas/")
+    , 10000);
   }
 
   async getPosts() {
-    return this.request<PaginatedResponse<SocialPost>>("/content/posts/");
+    return this.dedup("posts", () =>
+      this.request<PaginatedResponse<SocialPost>>("/content/posts/")
+    , 10000);
   }
 
   async generateContent(data: GenerateContentRequest) {
@@ -346,7 +370,9 @@ class ApiClient {
 
   // Finnhub economic calendar
   async getEconomicCalendar() {
-    return this.request<EconomicCalendarResponse>("/market/calendar/");
+    return this.dedup("calendar", () =>
+      this.request<EconomicCalendarResponse>("/market/calendar/")
+    , 60000);
   }
 
   // Finnhub pattern recognition
@@ -359,7 +385,9 @@ class ApiClient {
 
   // NewsAPI top headlines
   async getTopHeadlines(limit: number = 10) {
-    return this.request<TopHeadlinesResponse>(`/market/headlines/?limit=${limit}`);
+    return this.dedup(`headlines:${limit}`, () =>
+      this.request<TopHeadlinesResponse>(`/market/headlines/?limit=${limit}`)
+    , 30000);
   }
 
   // Deriv active symbols
