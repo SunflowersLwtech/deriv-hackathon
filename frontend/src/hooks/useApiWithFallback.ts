@@ -40,6 +40,10 @@ export function useApiWithFallback<T>({
   const [isUsingMock, setIsUsingMock] = useState(true);
   const [isBackendOnline, setIsBackendOnline] = useState(false);
   const mountedRef = useRef(true);
+  // Store fallbackData in a ref so it doesn't cause fetchData to be
+  // recreated on every render (callers often pass inline [] or {}).
+  const fallbackRef = useRef(fallbackData);
+  fallbackRef.current = fallbackData;
 
   const fetchData = useCallback(async () => {
     try {
@@ -59,7 +63,7 @@ export function useApiWithFallback<T>({
             return false;
           }
           // Never had real data, use fallback
-          setData(fallbackData);
+          setData(fallbackRef.current);
           return true;
         });
         setIsBackendOnline(false);
@@ -70,7 +74,7 @@ export function useApiWithFallback<T>({
         setIsLoading(false);
       }
     }
-  }, [fetcher, fallbackData]);
+  }, [fetcher]);
 
   // Initial fetch
   useEffect(() => {
