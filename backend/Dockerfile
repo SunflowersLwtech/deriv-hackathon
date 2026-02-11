@@ -53,4 +53,4 @@ EXPOSE 8000
 
 # Daphne for ASGI (supports HTTP + WebSocket)
 # Use $PORT for cloud platforms (Railway, Render) that inject PORT env var
-CMD ["sh", "-c", "timeout 30 python manage.py migrate --noinput || true; daphne -b 0.0.0.0 -p ${PORT:-8000} tradeiq.asgi:application"]
+CMD ["sh", "-c", "daphne -b 0.0.0.0 -p ${PORT:-8000} tradeiq.asgi:application"]

@@ -26,7 +26,7 @@ DEMO_USER_ID = "d1000000-0000-0000-0000-000000000001"
 class UserProfileViewSet(viewsets.ModelViewSet):
     queryset = UserProfile.objects.all().order_by("-created_at")
     serializer_class = UserProfileSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticatedOrReadOnly]
     
     @action(detail=True, methods=['get'])
     def statistics(self, request, pk=None):
@@ -289,7 +289,7 @@ class TradeViewSet(viewsets.ModelViewSet):
 class BehavioralMetricViewSet(viewsets.ModelViewSet):
     queryset = BehavioralMetric.objects.all()
     serializer_class = BehavioralMetricSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticatedOrReadOnly]
     
     def get_queryset(self):
         """Filter metrics by user if user_id provided."""
