@@ -66,6 +66,7 @@ export function useDashboardMetrics() {
     fetcher: fetchMetrics,
     fallbackData: EMPTY_DASHBOARD,
     pollInterval: 15000,
+    cacheKey: "dashboard-metrics",
   });
 }
 

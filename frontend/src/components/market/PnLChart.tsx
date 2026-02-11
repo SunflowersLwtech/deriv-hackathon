@@ -49,47 +49,64 @@ export default function PnLChart({
   useEffect(() => {
     let cancelled = false;
 
+    async function fetchPriceChart(symbol: string, tf: string): Promise<DataPoint[]> {
+      const history = await api.getMarketHistory(symbol, tf, 120);
+      return (history.candles || []).map((candle) => ({
+        time: formatTimeLabel(candle.time),
+        value: Number(candle.close || 0),
+      }));
+    }
+
     const fetchData = async () => {
       setIsLoading(true);
       try {
         if (instrument) {
-          const history = await api.getMarketHistory(instrument, timeframe, 120);
-          const chartData = (history.candles || []).map((candle) => ({
-            time: formatTimeLabel(candle.time),
-            value: Number(candle.close || 0),
-          }));
-
-          if (!cancelled) {
+          const chartData = await fetchPriceChart(instrument, timeframe);
+          if (!cancelled && chartData.length > 0) {
             setData(chartData);
           }
         } else {
-          const tradesResp = await api.getTrades();
-          const trades = Array.isArray(tradesResp) ? tradesResp : tradesResp.results || [];
+          // Try loading cumulative PnL from trades
+          let hasTrades = false;
+          try {
+            const tradesResp = await api.getTrades();
+            const trades = Array.isArray(tradesResp) ? tradesResp : tradesResp.results || [];
+            if (trades.length > 0) {
+              hasTrades = true;
+              const sorted = [...trades].sort((a, b) => {
+                const at = new Date(a.opened_at || a.created_at || Date.now()).getTime();
+                const bt = new Date(b.opened_at || b.created_at || Date.now()).getTime();
+                return at - bt;
+              });
+              let cumulative = 0;
+              const points = sorted.map((trade) => {
+                cumulative += Number(trade.pnl || 0);
+                const timestamp = trade.opened_at || trade.created_at || new Date().toISOString();
+                return {
+                  time: formatTimeLabel(timestamp),
+                  value: Number(cumulative.toFixed(2)),
+                };
+              });
+              if (!cancelled) setData(points);
+            }
+          } catch {
+            // getTrades failed (backend cold start, timeout, etc.) — fall through to price chart
+          }
 
-          const sorted = [...trades].sort((a, b) => {
-            const at = new Date(a.opened_at || a.created_at || Date.now()).getTime();
-            const bt = new Date(b.opened_at || b.created_at || Date.now()).getTime();
-            return at - bt;
-          });
-
-          let cumulative = 0;
-          const points = sorted.map((trade) => {
-            cumulative += Number(trade.pnl || 0);
-            const timestamp = trade.opened_at || trade.created_at || new Date().toISOString();
-            return {
-              time: formatTimeLabel(timestamp),
-              value: Number(cumulative.toFixed(2)),
-            };
-          });
-
-          if (!cancelled) {
-            setData(points);
+          // No trades or getTrades failed → show EUR/USD price chart
+          if (!hasTrades && !cancelled) {
+            try {
+              const chartData = await fetchPriceChart("frxEURUSD", "1h");
+              if (!cancelled && chartData.length > 0) {
+                setData(chartData);
+              }
+            } catch {
+              // getMarketHistory also failed — keep existing data (don't overwrite with [])
+            }
           }
         }
       } catch {
-        if (!cancelled) {
-          setData([]);
-        }
+        // Inner try/catches handle individual failures — nothing else to do here
       } finally {
         if (!cancelled) {
           setIsLoading(false);
@@ -104,6 +121,7 @@ export default function PnLChart({
       cancelled = true;
       clearInterval(interval);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instrument, timeframe]);
 
   const currentValue = hoveredValue ?? data[data.length - 1]?.value ?? 0;

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useApiWithFallback } from "./useApiWithFallback";
 import api from "@/lib/api";
+import type { EconomicEvent, EconomicCalendarResponse, TopHeadlinesResponse } from "@/lib/api";
 
 export interface TickerItem {
   symbol: string;
@@ -56,63 +57,56 @@ const NAME_MAP: Record<string, string> = {
   "Volatility 100": "Volatility 100 Index",
 };
 
-async function getPreferredInstruments(): Promise<string[]> {
-  try {
-    const profilesResp = await api.getUserProfiles();
-    const profiles = Array.isArray(profilesResp) ? profilesResp : profilesResp.results || [];
-    const watchlist = profiles.flatMap((p) => (Array.isArray(p.watchlist) ? p.watchlist : []));
-    const unique = Array.from(new Set(watchlist.filter(Boolean)));
-    if (unique.length > 0) {
-      return unique.slice(0, 8);
-    }
-  } catch {
-    // ignore and fall through to market brief
-  }
 
-  const brief = await api.getMarketBrief();
-  return (brief.instruments || []).map((item) => item.symbol).filter(Boolean).slice(0, 8);
-}
-
-export function useTickerData(updateInterval = 5000) {
+// Default interval increased from 5s to 10s: each tick now uses getMarketBrief()
+// which is heavier than individual price fetches, so polling less frequently
+// reduces backend load while still providing near-real-time updates.
+export function useTickerData(updateInterval = 10000) {
   const [tickers, setTickers] = useState<TickerItem[]>(FALLBACK_TICKERS);
   const [isUsingMock, setIsUsingMock] = useState(true);
   const previousPricesRef = useRef<Record<string, number>>({});
-  const instrumentsRef = useRef<string[]>([]);
-  const instrumentsLoadedAtRef = useRef<number>(0);
+  // Guard against request stacking: if getMarketBrief takes longer than
+  // the polling interval (possible — timeout is 45s), skip the next tick
+  // rather than piling up concurrent requests.
+  const isFetchingRef = useRef(false);
 
+  // Use the market brief endpoint (1 request) instead of N individual
+  // getLivePrice calls. The brief already fetches all instrument prices
+  // in parallel on the backend. Watchlist personalization is preserved —
+  // generate_market_brief(instruments=None) discovers instruments from
+  // user watchlists and recent trades server-side.
   const fetchTickers = useCallback(async () => {
-    const now = Date.now();
-    if (instrumentsRef.current.length === 0 || now - instrumentsLoadedAtRef.current > 60000) {
-      instrumentsRef.current = await getPreferredInstruments();
-      instrumentsLoadedAtRef.current = now;
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+    try {
+      const brief = await api.getMarketBrief();
+      const instruments = brief.instruments || [];
+
+      const live = instruments
+        .filter((item) => item.price != null)
+        .map((item) => {
+          const prev = previousPricesRef.current[item.symbol];
+          const next = item.price as number;
+          const pct = item.change_percent ?? (prev && prev !== 0 ? ((next - prev) / prev) * 100 : 0);
+          previousPricesRef.current[item.symbol] = next;
+
+          return {
+            symbol: item.symbol,
+            price: next,
+            change: pct,
+            icon: ICON_MAP[item.symbol] || "📊",
+          };
+        });
+
+      if (live.length === 0) {
+        throw new Error("No live ticker data available");
+      }
+
+      setTickers(live);
+      setIsUsingMock(false);
+    } finally {
+      isFetchingRef.current = false;
     }
-    const instruments = instrumentsRef.current;
-    const responses = await Promise.all(
-      instruments.map((symbol) => api.getLivePrice(symbol).catch(() => null))
-    );
-
-    const live = responses
-      .filter((item): item is NonNullable<typeof item> => !!item && item.price !== null)
-      .map((item) => {
-        const prev = previousPricesRef.current[item.instrument];
-        const next = item.price as number;
-        const pct = prev && prev !== 0 ? ((next - prev) / prev) * 100 : 0;
-        previousPricesRef.current[item.instrument] = next;
-
-        return {
-          symbol: item.instrument,
-          price: next,
-          change: pct,
-          icon: ICON_MAP[item.instrument] || "📊",
-        };
-      });
-
-    if (live.length === 0) {
-      throw new Error("No live ticker data available");
-    }
-
-    setTickers(live);
-    setIsUsingMock(false);
   }, []);
 
   useEffect(() => {
@@ -160,6 +154,7 @@ export function useMarketOverview() {
     fetcher: fetchOverview,
     fallbackData: FALLBACK_MARKET_DATA,
     pollInterval: 15000,
+    cacheKey: "market-overview",
   });
 }
 
@@ -182,26 +177,33 @@ export function useMarketInsights() {
     fetcher: fetchInsights,
     fallbackData: FALLBACK_INSIGHTS,
     pollInterval: 30000,
+    cacheKey: "market-insights",
   });
 }
 
+const DEFAULT_INSTRUMENTS = [
+  "frxEURUSD", "frxGBPUSD", "frxUSDJPY",
+  "cryBTCUSD", "frxXAUUSD", "R_100",
+];
+
 export function useInstrumentUniverse() {
   const fetchInstruments = useCallback(async () => {
-    const brief = await api.getMarketBrief();
-    const symbols = (brief.instruments || []).map((item) => item.symbol).filter(Boolean);
-    return Array.from(new Set(symbols));
+    // Use the fast /market/instruments/ endpoint (simple GET, no LLM/WS)
+    // instead of getMarketBrief which is slow (6 Deriv WS + LLM summary).
+    const resp = await api.getActiveSymbols();
+    const symbols = (resp.instruments || []).map((s) => s.symbol || s.display_name).filter(Boolean);
+    return symbols.length > 0 ? symbols.slice(0, 20) : DEFAULT_INSTRUMENTS;
   }, []);
 
   return useApiWithFallback<string[]>({
     fetcher: fetchInstruments,
-    fallbackData: [],
-    pollInterval: 60000,
+    fallbackData: DEFAULT_INSTRUMENTS,
+    pollInterval: 120000,
+    cacheKey: "instrument-universe",
   });
 }
 
-// ─── New hooks for Finnhub / Deriv / NewsAPI ───────────────────────
-
-import type { EconomicEvent, EconomicCalendarResponse, TopHeadlinesResponse } from "@/lib/api";
+// ─── Finnhub / Deriv / NewsAPI hooks ────────────────────────────────
 
 export function useEconomicCalendar() {
   const fetchCalendar = useCallback(async () => {
@@ -212,7 +214,8 @@ export function useEconomicCalendar() {
   return useApiWithFallback<EconomicEvent[]>({
     fetcher: fetchCalendar,
     fallbackData: [],
-    pollInterval: 300000, // 5 minutes
+    pollInterval: 300000,
+    cacheKey: "economic-calendar",
   });
 }
 
@@ -225,6 +228,7 @@ export function useTopHeadlines(limit = 8) {
   return useApiWithFallback<Array<{ title: string; description: string; url: string; publishedAt: string; source: string }>>({
     fetcher: fetchHeadlines,
     fallbackData: [],
+    cacheKey: "top-headlines",
     pollInterval: 120000, // 2 minutes
   });
 }

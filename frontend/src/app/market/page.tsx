@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import AppShell from "@/components/layout/AppShell";
-import PnLChart from "@/components/market/PnLChart";
-import MarketOverview from "@/components/market/MarketOverview";
 import DataCard from "@/components/ui/DataCard";
 import DisclaimerBadge from "@/components/ui/DisclaimerBadge";
 import CollapsibleSection from "@/components/ui/CollapsibleSection";
@@ -11,6 +10,16 @@ import LoadingDots from "@/components/ui/LoadingDots";
 import { cn } from "@/lib/utils";
 import api, { type MarketSentiment, type MarketTechnicals } from "@/lib/api";
 import { useInstrumentUniverse, useEconomicCalendar, useTopHeadlines } from "@/hooks/useMarketData";
+
+const PnLChart = dynamic(() => import("@/components/market/PnLChart"), {
+  loading: () => <div className="bg-card border border-border rounded-md p-6 h-[400px] animate-shimmer" />,
+  ssr: false,
+});
+
+const MarketOverview = dynamic(() => import("@/components/market/MarketOverview"), {
+  loading: () => <div className="bg-card border border-border rounded-md h-[300px] animate-shimmer" />,
+  ssr: false,
+});
 
 const INSTRUMENT_ICONS: Record<string, string> = {
   "EUR/USD": "💶",

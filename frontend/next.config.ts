@@ -6,6 +6,12 @@ const nextConfig: NextConfig = {
   // Set NEXT_OUTPUT=standalone env var in Docker, or leave undefined for Vercel
   output: process.env.NEXT_OUTPUT === "standalone" ? "standalone" : undefined,
 
+  // Enable gzip compression for smaller transfer sizes
+  compress: true,
+
+  // Remove X-Powered-By header (minor security + smaller response)
+  poweredByHeader: false,
+
   // Allow backend API images if any
   images: {
     remotePatterns: [
@@ -15,6 +21,29 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+
+  // Cache static assets aggressively on Render
+  headers: async () => [
+    {
+      // Match requests for static asset file extensions in public/
+      source: "/:path(.+\\.(?:svg|jpg|png|webp|avif|ico|woff2?))",
+      headers: [
+        {
+          key: "Cache-Control",
+          value: "public, max-age=31536000, immutable",
+        },
+      ],
+    },
+    {
+      source: "/_next/static/:path*",
+      headers: [
+        {
+          key: "Cache-Control",
+          value: "public, max-age=31536000, immutable",
+        },
+      ],
+    },
+  ],
 };
 
 export default nextConfig;

@@ -7,12 +7,24 @@ from agents.llm_client import get_llm_client
 from agents.prompts import SYSTEM_PROMPT_MARKET
 from .models import MarketInsight
 import json
+import logging
 import os
 import math
 import requests
 import asyncio
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
+
+# Gracefully handle missing Redis — cache is optional
+try:
+    from .cache import get_cached_price, set_cached_price
+    _CACHE_AVAILABLE = True
+except ImportError:
+    _CACHE_AVAILABLE = False
+    logger.info("Redis cache not available, running without price cache")
 
 
 # Deriv symbol mapping: user-friendly -> Deriv API symbol
@@ -143,6 +155,7 @@ def _run_async_in_new_thread(coro):
 def fetch_price_data(instrument: str) -> Dict[str, Any]:
     """
     Fetch current price data for an instrument from Deriv WebSocket API.
+    Uses Redis cache to avoid redundant WebSocket calls (5-second TTL).
 
     Args:
         instrument: Trading instrument symbol (e.g., "EUR/USD")
@@ -150,8 +163,30 @@ def fetch_price_data(instrument: str) -> Dict[str, Any]:
     Returns:
         Dict with price, change, etc.
     """
+    # Check cache first (short 5s TTL for live prices — deduplicates the burst
+    # of concurrent requests that fire when dashboard hooks mount at once.
+    # This differs from cache.py's 300s default which is for longer-lived data.
+    if _CACHE_AVAILABLE:
+        try:
+            cached = get_cached_price(instrument)
+            if cached is not None:
+                return {
+                    "instrument": instrument,
+                    "price": cached,
+                    "timestamp": datetime.now().isoformat(),
+                    "source": "deriv",
+                    "cached": True,
+                }
+        except Exception as exc:
+            logger.debug("Redis cache read failed for %s: %s", instrument, exc)
+
     try:
         result = _run_async_in_new_thread(_fetch_deriv_price_async(instrument))
+        if _CACHE_AVAILABLE and result and result.get("price") is not None:
+            try:
+                set_cached_price(instrument, result["price"], ttl_seconds=5)
+            except Exception as exc:
+                logger.debug("Redis cache write failed for %s: %s", instrument, exc)
         return result
     except Exception as e:
         return {
@@ -317,32 +352,69 @@ def _search_newsapi(query: str, limit: int) -> List[Dict[str, Any]]:
         return []
 
 
-def fetch_top_headlines(category: str = "business", country: str = "us", limit: int = 10) -> List[Dict[str, Any]]:
-    """Fetch top headlines from NewsAPI /v2/top-headlines."""
-    api_key = os.environ.get("NEWS_API_KEY", "")
+def _fetch_finnhub_headlines(limit: int = 10) -> List[Dict[str, Any]]:
+    """Fallback: fetch general market news from Finnhub (free tier)."""
+    api_key = os.environ.get("FINNHUB_API_KEY", "")
     if not api_key:
         return []
     try:
         response = requests.get(
-            "https://newsapi.org/v2/top-headlines",
-            params={"category": category, "country": country, "apiKey": api_key, "pageSize": limit},
+            "https://finnhub.io/api/v1/news",
+            params={"category": "general", "token": api_key},
             timeout=5,
         )
         if response.status_code != 200:
             return []
+        items = response.json()
+        if not isinstance(items, list):
+            return []
         return [
             {
-                "title": a.get("title", ""),
-                "description": a.get("description", ""),
-                "url": a.get("url", ""),
-                "publishedAt": a.get("publishedAt", ""),
-                "source": a.get("source", {}).get("name", ""),
+                "title": (item.get("headline") or "").strip(),
+                "description": (item.get("summary") or "").strip(),
+                "url": item.get("url", ""),
+                "publishedAt": (
+                    datetime.fromtimestamp(item["datetime"], tz=timezone.utc).isoformat()
+                    if isinstance(item.get("datetime"), (int, float)) and item["datetime"] > 0
+                    else ""
+                ),
+                "source": item.get("source", ""),
             }
-            for a in response.json().get("articles", [])[:limit]
+            for item in items[:limit]
+            if (item.get("headline") or "").strip()
         ]
-    except Exception as e:
-        print(f"NewsAPI headlines error: {e}")
+    except Exception:
         return []
+
+
+def fetch_top_headlines(category: str = "business", country: str = "us", limit: int = 10) -> List[Dict[str, Any]]:
+    """Fetch top headlines from NewsAPI, falling back to Finnhub news."""
+    api_key = os.environ.get("NEWS_API_KEY", "")
+    if api_key:
+        try:
+            response = requests.get(
+                "https://newsapi.org/v2/top-headlines",
+                params={"category": category, "country": country, "apiKey": api_key, "pageSize": limit},
+                timeout=5,
+            )
+            if response.status_code == 200:
+                articles = [
+                    {
+                        "title": a.get("title", ""),
+                        "description": a.get("description", ""),
+                        "url": a.get("url", ""),
+                        "publishedAt": a.get("publishedAt", ""),
+                        "source": a.get("source", {}).get("name", ""),
+                    }
+                    for a in response.json().get("articles", [])[:limit]
+                ]
+                if articles:
+                    return articles
+        except Exception:
+            pass
+
+    # Fallback to Finnhub news (free tier, no rate limit issues)
+    return _fetch_finnhub_headlines(limit)
 
 
 def _finnhub_category_for_query(query: str) -> str:
@@ -420,7 +492,11 @@ def search_news(query: str, limit: int = 5) -> List[Dict[str, Any]]:
     Returns:
         List of news articles
     """
-    combined = _search_newsapi(query, limit=limit) + _search_finnhub_news(query, limit=limit)
+    # Fetch from both sources in parallel
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        newsapi_future = executor.submit(_search_newsapi, query, limit)
+        finnhub_future = executor.submit(_search_finnhub_news, query, limit)
+        combined = newsapi_future.result() + finnhub_future.result()
     if not combined:
         return []
 
@@ -708,24 +784,34 @@ def generate_market_brief(instruments: List[str] = None) -> Dict[str, Any]:
         instruments = list(dict.fromkeys(discovered))
 
     if not instruments:
-        return {
-            "summary": "No instruments available from database watchlists or recent trades.",
-            "instruments": [],
-            "timestamp": datetime.now().isoformat(),
-            "source": "database",
-        }
+        # Fallback to popular instruments when DB has no watchlists/trades
+        instruments = [
+            "frxEURUSD", "frxGBPUSD", "frxUSDJPY",
+            "cryBTCUSD", "frxXAUUSD", "R_100",
+        ]
 
-    instrument_data = []
-    for inst in instruments[:6]:  # Max 6
-        price = fetch_price_data(inst)
-        history = fetch_price_history(inst, timeframe="1h", count=24)
-        instrument_data.append({
-            "symbol": inst,
-            "price": price.get("price"),
-            "change": history.get("change"),
-            "change_percent": history.get("change_percent"),
-            "source": price.get("source", "deriv"),
-        })
+    # Fetch all instruments in parallel (preserving input order via executor.map)
+
+    def _fetch_instrument(inst: str) -> Dict[str, Any]:
+        try:
+            price = fetch_price_data(inst)
+            history = fetch_price_history(inst, timeframe="1h", count=24)
+            return {
+                "symbol": inst,
+                "price": price.get("price"),
+                "change": history.get("change"),
+                "change_percent": history.get("change_percent"),
+                "source": price.get("source", "deriv"),
+            }
+        except Exception as exc:
+            logger.warning("Failed to fetch data for %s: %s", inst, exc)
+            return {
+                "symbol": inst, "price": None, "change": None,
+                "change_percent": None, "source": "deriv",
+            }
+
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        instrument_data = list(executor.map(_fetch_instrument, instruments[:6]))
 
     data_summary = "\n".join([
         f"- {d['symbol']}: {d['price'] or 'N/A'}"
@@ -803,6 +889,8 @@ def fetch_economic_calendar() -> Dict[str, Any]:
             params={"from": from_date, "to": to_date, "token": api_key},
             timeout=8,
         )
+        if response.status_code == 403:
+            return {"events": [], "note": "Economic calendar requires Finnhub premium plan"}
         if response.status_code != 200:
             return {"events": [], "error": f"Finnhub HTTP {response.status_code}"}
 

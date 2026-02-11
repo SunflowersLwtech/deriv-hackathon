@@ -21,19 +21,66 @@ function resolveApiBase(): string {
   return DEFAULT_LOCAL_API_BASE;
 }
 
+// API request timeout constants (milliseconds)
+const TIMEOUT_DEFAULT = 15_000;     // standard API calls
+const TIMEOUT_TECHNICALS = 20_000;  // Deriv WS history + computation
+const TIMEOUT_ANALYSIS = 25_000;    // pattern analysis + LLM nudge
+const TIMEOUT_LLM = 30_000;        // LLM reasoning / sentiment
+const TIMEOUT_BRIEF = 45_000;      // parallel Deriv WS + LLM summary
+const TIMEOUT_PIPELINE = 90_000;   // full 5-agent pipeline (Monitor→Analyst→Advisor→Sentinel→Content)
+
 interface ApiOptions {
   method?: string;
   body?: unknown;
   headers?: Record<string, string>;
   token?: string;
   requiresAuth?: boolean;
+  /** Request timeout in ms. Defaults to TIMEOUT_DEFAULT (15s). */
+  timeoutMs?: number;
 }
 
 class ApiClient {
   private baseUrl?: string;
 
+  // In-flight request deduplication: prevents the same endpoint from being
+  // called multiple times simultaneously (e.g., getUserProfiles from 3+ hooks)
+  private _inflight = new Map<string, Promise<unknown>>();
+  // TTL cache: avoid re-fetching the same data when multiple hooks with
+  // different polling intervals hit the same endpoint seconds apart.
+  private _cache = new Map<string, { data: unknown; expiresAt: number }>();
+
   constructor(baseUrl?: string) {
     this.baseUrl = baseUrl?.trim() ? normalizeApiBase(baseUrl) : undefined;
+  }
+
+  /** Read stale cached data (even if expired) for instant mount display. */
+  getCached<T>(key: string): T | undefined {
+    const entry = this._cache.get(key.toLowerCase().trim());
+    return entry ? (entry.data as T) : undefined;
+  }
+
+  /** Deduplicate concurrent requests AND cache results for `ttl` ms. */
+  private dedup<T>(key: string, fn: () => Promise<T>, ttl = 5000): Promise<T> {
+    const normalized = key.toLowerCase().trim();
+
+    // Return cached result if still fresh
+    const cached = this._cache.get(normalized);
+    if (cached && Date.now() < cached.expiresAt) {
+      return Promise.resolve(cached.data as T);
+    }
+
+    // Return in-flight promise if one exists
+    const existing = this._inflight.get(normalized);
+    if (existing) return existing as Promise<T>;
+
+    const promise = fn()
+      .then((data) => {
+        this._cache.set(normalized, { data, expiresAt: Date.now() + ttl });
+        return data;
+      })
+      .finally(() => this._inflight.delete(normalized));
+    this._inflight.set(normalized, promise);
+    return promise;
   }
 
   private getBaseUrl(): string {
@@ -60,7 +107,7 @@ class ApiClient {
   }
 
   private async request<T>(endpoint: string, options: ApiOptions = {}): Promise<T> {
-    const { method = "GET", body, headers = {}, token, requiresAuth = false } = options;
+    const { method = "GET", body, headers = {}, token, requiresAuth = false, timeoutMs = TIMEOUT_DEFAULT } = options;
 
     const requestHeaders: Record<string, string> = {
       "Content-Type": "application/json",
@@ -78,6 +125,7 @@ class ApiClient {
       method,
       headers: requestHeaders,
       body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     if (!response.ok) {
@@ -90,20 +138,31 @@ class ApiClient {
 
   // Market endpoints
   async getMarketInsights() {
-    return this.request<MarketInsightsResponse>("/market/insights/");
+    return this.dedup("insights", () =>
+      this.request<MarketInsightsResponse>("/market/insights/")
+    , 10000);
   }
 
+  // Safe to dedup: getMarketBrief is a read-only query despite using POST (body params).
+  // Normalize: empty array is semantically identical to undefined on the backend,
+  // so we collapse both to the same dedup key and request body.
   async getMarketBrief(instruments?: string[]) {
-    return this.request<MarketBrief>("/market/brief/", {
-      method: "POST",
-      body: { instruments },
-    });
+    const normalized = instruments?.length ? [...new Set(instruments)] : undefined;
+    const key = `brief:${normalized ? [...normalized].sort().join(",") : ""}`;
+    return this.dedup(key, () =>
+      this.request<MarketBrief>("/market/brief/", {
+        method: "POST",
+        body: { instruments: normalized },
+        timeoutMs: TIMEOUT_BRIEF,
+      })
+    , 8000);
   }
 
   async askMarketAnalyst(question: string) {
     return this.request<MarketAnalysis>("/market/ask/", {
       method: "POST",
       body: { question },
+      timeoutMs: TIMEOUT_LLM,
     });
   }
 
@@ -118,6 +177,7 @@ class ApiClient {
     return this.request<MarketHistory>("/market/history/", {
       method: "POST",
       body: { instrument, timeframe, count },
+      timeoutMs: TIMEOUT_TECHNICALS,
     });
   }
 
@@ -125,6 +185,7 @@ class ApiClient {
     return this.request<MarketTechnicals>("/market/technicals/", {
       method: "POST",
       body: { instrument, timeframe },
+      timeoutMs: TIMEOUT_TECHNICALS,
     });
   }
 
@@ -132,30 +193,40 @@ class ApiClient {
     return this.request<MarketSentiment>("/market/sentiment/", {
       method: "POST",
       body: { instrument },
+      timeoutMs: TIMEOUT_LLM,
     });
   }
 
-  // Behavior endpoints
+  // Behavior endpoints (deduplicated — these are called by multiple hooks on mount)
   async getUserProfiles() {
-    return this.request<PaginatedResponse<UserProfile>>("/behavior/profiles/");
+    return this.dedup("profiles", () =>
+      this.request<PaginatedResponse<UserProfile>>("/behavior/profiles/")
+    , 8000);
   }
 
   async getTrades(userId?: string) {
     const query = userId ? `?user_id=${userId}` : "";
-    return this.request<PaginatedResponse<Trade>>(`/behavior/trades/${query}`);
+    return this.dedup(`trades:${userId ?? ""}`, () =>
+      this.request<PaginatedResponse<Trade>>(`/behavior/trades/${query}`)
+    , 8000);
   }
 
   async getBehavioralMetrics(userId?: string) {
     const query = userId ? `?user_id=${userId}` : "";
-    return this.request<PaginatedResponse<BehavioralMetric>>(`/behavior/metrics/${query}`);
+    return this.dedup(`metrics:${userId ?? ""}`, () =>
+      this.request<PaginatedResponse<BehavioralMetric>>(`/behavior/metrics/${query}`)
+    , 8000);
   }
 
   async analyzeBatch(userId: string, hours: number = 24) {
-    return this.request<BatchAnalysis>("/behavior/trades/analyze_batch/", {
-      method: "POST",
-      body: { user_id: userId, hours },
-      requiresAuth: true,
-    });
+    return this.dedup(`analyze:${userId}:${hours}`, () =>
+      this.request<BatchAnalysis>("/behavior/trades/analyze_batch/", {
+        method: "POST",
+        body: { user_id: userId, hours },
+        requiresAuth: true,
+        timeoutMs: TIMEOUT_ANALYSIS,
+      })
+    , 10000);
   }
 
   // Demo scenario endpoints
@@ -163,6 +234,7 @@ class ApiClient {
     return this.request<ScenarioAnalysis>("/demo/analyze/", {
       method: "POST",
       body: { scenario },
+      timeoutMs: TIMEOUT_LLM,
     });
   }
 
@@ -172,17 +244,22 @@ class ApiClient {
 
   // Content endpoints
   async getPersonas() {
-    return this.request<PaginatedResponse<AIPersona>>("/content/personas/");
+    return this.dedup("personas", () =>
+      this.request<PaginatedResponse<AIPersona>>("/content/personas/")
+    , 10000);
   }
 
   async getPosts() {
-    return this.request<PaginatedResponse<SocialPost>>("/content/posts/");
+    return this.dedup("posts", () =>
+      this.request<PaginatedResponse<SocialPost>>("/content/posts/")
+    , 10000);
   }
 
   async generateContent(data: GenerateContentRequest) {
     return this.request<GenerateContentResponse>("/content/generate/", {
       method: "POST",
       body: data,
+      timeoutMs: TIMEOUT_LLM,
     });
   }
 
@@ -190,6 +267,7 @@ class ApiClient {
     return this.request<PublishResponse>("/content/publish-bluesky/", {
       method: "POST",
       body: { content, type: postType },
+      timeoutMs: TIMEOUT_LLM,
     });
   }
 
@@ -198,6 +276,7 @@ class ApiClient {
     return this.request<ChatResponse>("/chat/ask/", {
       method: "POST",
       body: { message, conversation_history: conversationHistory },
+      timeoutMs: TIMEOUT_LLM,
     });
   }
 
@@ -210,6 +289,7 @@ class ApiClient {
     return this.request<LoadScenarioResponse>("/demo/load-scenario/", {
       method: "POST",
       body: { scenario },
+      timeoutMs: TIMEOUT_LLM,
     });
   }
 
@@ -217,6 +297,7 @@ class ApiClient {
     return this.request<WowMomentResponse>("/demo/wow-moment/", {
       method: "POST",
       body: { user_id: userId, instrument },
+      timeoutMs: TIMEOUT_PIPELINE,
     });
   }
 
@@ -225,6 +306,7 @@ class ApiClient {
     return this.request<PipelineResponse>("/agents/pipeline/", {
       method: "POST",
       body: params,
+      timeoutMs: TIMEOUT_PIPELINE,
     });
   }
 
@@ -232,6 +314,7 @@ class ApiClient {
     return this.request<MonitorResponse>("/agents/monitor/", {
       method: "POST",
       body: { instruments, custom_event: customEvent },
+      timeoutMs: TIMEOUT_LLM,
     });
   }
 
@@ -239,6 +322,7 @@ class ApiClient {
     return this.request<AnalysisReportResponse>("/agents/analyst/", {
       method: "POST",
       body: event,
+      timeoutMs: TIMEOUT_LLM,
     });
   }
 
@@ -246,6 +330,7 @@ class ApiClient {
     return this.request<PersonalizedInsightResponse>("/agents/advisor/", {
       method: "POST",
       body: { analysis_report: analysisReport, user_portfolio: userPortfolio },
+      timeoutMs: TIMEOUT_LLM,
     });
   }
 
@@ -253,6 +338,7 @@ class ApiClient {
     return this.request<MarketCommentaryResponse>("/agents/content-gen/", {
       method: "POST",
       body: { analysis_report: analysisReport, personalized_insight: personalizedInsight },
+      timeoutMs: TIMEOUT_LLM,
     });
   }
 
@@ -261,6 +347,7 @@ class ApiClient {
     return this.request<BehavioralSentinelResponse>("/agents/sentinel/", {
       method: "POST",
       body: params,
+      timeoutMs: TIMEOUT_LLM,
     });
   }
 
@@ -269,6 +356,7 @@ class ApiClient {
     return this.request<DerivSyncResponse>("/behavior/trades/sync_deriv/", {
       method: "POST",
       body: { user_id: userId, days_back: daysBack },
+      timeoutMs: TIMEOUT_LLM,
     });
   }
 
@@ -289,7 +377,9 @@ class ApiClient {
 
   // Finnhub economic calendar
   async getEconomicCalendar() {
-    return this.request<EconomicCalendarResponse>("/market/calendar/");
+    return this.dedup("calendar", () =>
+      this.request<EconomicCalendarResponse>("/market/calendar/")
+    , 60000);
   }
 
   // Finnhub pattern recognition
@@ -302,7 +392,9 @@ class ApiClient {
 
   // NewsAPI top headlines
   async getTopHeadlines(limit: number = 10) {
-    return this.request<TopHeadlinesResponse>(`/market/headlines/?limit=${limit}`);
+    return this.dedup(`headlines:${limit}`, () =>
+      this.request<TopHeadlinesResponse>(`/market/headlines/?limit=${limit}`)
+    , 30000);
   }
 
   // Deriv active symbols
@@ -320,6 +412,7 @@ class ApiClient {
   async chatWithHistory(message: string, agentType: string = "auto", history?: Array<{role: string; content: string}>, userId?: string) {
     return this.request<ChatResponse>("/agents/chat/", {
       method: "POST",
+      timeoutMs: TIMEOUT_LLM,
       body: { message, agent_type: agentType, history, user_id: userId },
     });
   }

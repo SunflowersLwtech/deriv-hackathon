@@ -89,6 +89,7 @@ export function useTrades() {
     fetcher: fetchTrades,
     fallbackData: EMPTY_TRADES,
     pollInterval: 10000,
+    cacheKey: "trades",
   });
 }
 
@@ -153,6 +154,7 @@ export function useBehaviorPatterns() {
     fetcher: fetchPatterns,
     fallbackData: EMPTY_PATTERNS,
     pollInterval: 15000,
+    cacheKey: "behavior-patterns",
   });
 }
 
@@ -208,5 +210,6 @@ export function useSessionStats() {
     fetcher: fetchStats,
     fallbackData: EMPTY_SESSION_STATS,
     pollInterval: 15000,
+    cacheKey: "session-stats",
   });
 }
