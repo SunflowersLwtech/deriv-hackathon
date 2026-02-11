@@ -197,7 +197,6 @@ class ApiClient {
     return this.request<BatchAnalysis>("/behavior/trades/analyze_batch/", {
       method: "POST",
       body: { user_id: userId, hours },
-      requiresAuth: true,
       timeoutMs: TIMEOUT_ANALYSIS,
     });
   }

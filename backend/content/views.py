@@ -16,7 +16,7 @@ class AIPersonaViewSet(viewsets.ReadOnlyModelViewSet):
 class SocialPostViewSet(viewsets.ModelViewSet):
     queryset = SocialPost.objects.all()
     serializer_class = SocialPostSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
+    permission_classes = [AllowAny]
 
 
 class GenerateContentView(APIView):
