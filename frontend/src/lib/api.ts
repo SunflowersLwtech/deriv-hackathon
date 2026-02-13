@@ -462,10 +462,10 @@ class ApiClient {
     });
   }
 
-  async executeDemoTrade(proposalId: string, price: number) {
+  async executeDemoTrade(instrument: string, contractType: string, amount: number, duration: number, durationUnit: string) {
     return this.request<DemoTradeResponse>("/agents/trading/", {
       method: "POST",
-      body: { action: "buy", proposal_id: proposalId, price },
+      body: { action: "buy", instrument, contract_type: contractType, amount, duration, duration_unit: durationUnit },
     });
   }
 

@@ -76,11 +76,12 @@ export default function TradingPage() {
   };
 
   const handleExecuteTrade = async () => {
-    if (!quote?.proposal_id) return;
+    if (!quote) return;
     setTradeLoading(true);
     setError(null);
     try {
-      const resp = await api.executeDemoTrade(quote.proposal_id, quote.ask_price);
+      // Use quote_and_buy: send contract params so backend does proposal+buy in one WS session
+      const resp = await api.executeDemoTrade(instrument, contractType, amount, duration, durationUnit);
       if (resp.error) {
         setError(resp.error);
       } else {

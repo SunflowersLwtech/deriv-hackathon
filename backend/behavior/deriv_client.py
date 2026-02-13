@@ -561,6 +561,62 @@ class DerivClient:
                 await client.disconnect()
         return self._run_async(_fetch())
 
+    def quote_and_buy(
+        self,
+        symbol: str = "R_100",
+        contract_type: str = "CALL",
+        amount: float = 10,
+        basis: str = "stake",
+        duration: int = 5,
+        duration_unit: str = "t",
+        api_token: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Get a proposal and immediately buy it in the SAME WebSocket session."""
+        async def _fetch():
+            client = DerivClient(self.app_id)
+            try:
+                await client.connect()
+                await client.authorize(api_token)
+                # Step 1: get proposal
+                resp = await client.send_request({
+                    "proposal": 1,
+                    "amount": amount,
+                    "basis": basis,
+                    "contract_type": contract_type,
+                    "currency": "USD",
+                    "duration": duration,
+                    "duration_unit": duration_unit,
+                    "symbol": symbol,
+                })
+                proposal = resp.get("proposal", {})
+                proposal_id = proposal.get("id", "")
+                ask_price = float(proposal.get("ask_price", 0))
+
+                if not proposal_id:
+                    return {"error": "Failed to get proposal ID from Deriv API"}
+
+                # Step 2: buy immediately on the same connection
+                buy_resp = await client.send_request({
+                    "buy": proposal_id,
+                    "price": ask_price,
+                })
+                buy_data = buy_resp.get("buy", {})
+                return {
+                    "contract_id": buy_data.get("contract_id"),
+                    "buy_price": float(buy_data.get("buy_price", 0)),
+                    "balance_after": float(buy_data.get("balance_after", 0)),
+                    "longcode": buy_data.get("longcode", ""),
+                    "start_time": buy_data.get("start_time"),
+                    "transaction_id": buy_data.get("transaction_id"),
+                    "payout": float(proposal.get("payout", 0)),
+                    "spot": float(proposal.get("spot", 0)),
+                    "contract_type": contract_type,
+                    "symbol": symbol,
+                }
+            finally:
+                await client.disconnect()
+        return self._run_async(_fetch())
+
     def sell_contract(
         self,
         contract_id: int,
