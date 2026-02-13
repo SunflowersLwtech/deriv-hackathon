@@ -118,6 +118,43 @@ def execute_demo_trade(
         return {"error": str(e)}
 
 
+def quote_and_buy(
+    instrument: str = "Volatility 100 Index",
+    contract_type: str = "CALL",
+    amount: float = 10,
+    duration: int = 5,
+    duration_unit: str = "t",
+) -> Dict[str, Any]:
+    """
+    Get quote and immediately buy in a single WebSocket session.
+    Avoids InvalidContractProposal errors from expired proposal IDs.
+    """
+    try:
+        symbol = _resolve_symbol(instrument)
+        client = DerivClient()
+        result = client.quote_and_buy(
+            symbol=symbol,
+            contract_type=contract_type,
+            amount=amount,
+            duration=duration,
+            duration_unit=duration_unit,
+        )
+
+        if "error" in result:
+            return result
+
+        result["instrument"] = instrument
+        result["disclaimer"] = DEMO_DISCLAIMER
+        result["educational_note"] = (
+            "Trade executed on Demo account with virtual funds. "
+            "This demonstrates the full trading cycle for educational purposes."
+        )
+        return result
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
 def close_position(contract_id: int) -> Dict[str, Any]:
     """Close an open contract position."""
     try:

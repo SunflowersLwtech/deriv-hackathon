@@ -29,6 +29,7 @@ from copytrading.tools import (
 from trading.tools import (
     get_contract_quote,
     execute_demo_trade,
+    quote_and_buy,
     close_position,
     get_positions,
 )
@@ -420,11 +421,17 @@ class AgentTradingView(APIView):
                     duration_unit=request.data.get("duration_unit", "t"),
                 )
             elif action == "buy":
-                proposal_id = request.data.get("proposal_id")
-                price = request.data.get("price")
-                if not proposal_id or price is None:
-                    return Response({"error": "proposal_id and price are required"}, status=status.HTTP_400_BAD_REQUEST)
-                result = execute_demo_trade(proposal_id, price)
+                # Use quote_and_buy to avoid InvalidContractProposal from expired proposals
+                instrument = request.data.get("instrument")
+                if not instrument:
+                    return Response({"error": "instrument is required for buy"}, status=status.HTTP_400_BAD_REQUEST)
+                result = quote_and_buy(
+                    instrument=instrument,
+                    contract_type=request.data.get("contract_type", "CALL"),
+                    amount=request.data.get("amount", 10),
+                    duration=request.data.get("duration", 5),
+                    duration_unit=request.data.get("duration_unit", "t"),
+                )
             elif action == "sell":
                 contract_id = request.data.get("contract_id")
                 if contract_id is None:
