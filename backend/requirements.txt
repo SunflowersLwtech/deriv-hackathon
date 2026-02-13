@@ -26,6 +26,9 @@ requests>=2.31.0,<3.0.0  # For NewsAPI and external APIs
 redis[hiredis]>=5.0,<6.0
 channels-redis>=4.1,<5.0
 
+# WebSocket client (for Deriv API)
+websockets>=12.0,<14.0
+
 # Utilities
 python-dotenv>=1.0,<2.0
 

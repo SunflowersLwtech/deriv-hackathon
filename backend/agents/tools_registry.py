@@ -24,6 +24,19 @@ from content.tools import (
     generate_thread,
     format_for_platform
 )
+from copytrading.tools import (
+    get_top_traders,
+    get_trader_stats,
+    recommend_trader,
+    start_copy_trade,
+    stop_copy_trade,
+)
+from trading.tools import (
+    get_contract_quote,
+    execute_demo_trade,
+    close_position,
+    get_positions,
+)
 
 
 def get_market_tools() -> List[Dict[str, Any]]:
@@ -283,6 +296,199 @@ def get_content_tools() -> List[Dict[str, Any]]:
     ]
 
 
+def get_copytrading_tools() -> List[Dict[str, Any]]:
+    """Get tool definitions for Copy Trading Agent"""
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_top_traders",
+                "description": "Get a list of top traders available for copy trading with their statistics",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of traders to return",
+                            "default": 10
+                        }
+                    },
+                    "required": []
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_trader_stats",
+                "description": "Get detailed statistics for a specific trader (win rate, avg profit, copiers count)",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "trader_id": {
+                            "type": "string",
+                            "description": "The trader's login ID"
+                        }
+                    },
+                    "required": ["trader_id"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "recommend_trader",
+                "description": "AI-powered recommendation: find the best trader match based on user's trading style and risk profile",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "user_id": {
+                            "type": "string",
+                            "description": "User UUID for behavioral profile matching"
+                        }
+                    },
+                    "required": ["user_id"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "start_copy_trade",
+                "description": "Start copying a trader on Demo account. Educational: lets users learn how copy trading works.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "trader_id": {
+                            "type": "string",
+                            "description": "Trader to copy"
+                        },
+                        "api_token": {
+                            "type": "string",
+                            "description": "User's Deriv API token (Demo account only)"
+                        }
+                    },
+                    "required": ["trader_id", "api_token"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "stop_copy_trade",
+                "description": "Stop copying a trader",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "trader_id": {
+                            "type": "string",
+                            "description": "Trader to stop copying"
+                        },
+                        "api_token": {
+                            "type": "string",
+                            "description": "User's Deriv API token"
+                        }
+                    },
+                    "required": ["trader_id", "api_token"]
+                }
+            }
+        }
+    ]
+
+
+def get_trading_tools() -> List[Dict[str, Any]]:
+    """Get tool definitions for Trading Execution Agent (Demo only)"""
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_contract_quote",
+                "description": "Get a price quote for a trading contract (educational demo). Shows how contracts work with real market data.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "instrument": {
+                            "type": "string",
+                            "description": "Trading instrument (e.g., 'Volatility 100 Index', 'EUR/USD')"
+                        },
+                        "contract_type": {
+                            "type": "string",
+                            "description": "Contract type: CALL (up), PUT (down)",
+                            "default": "CALL"
+                        },
+                        "amount": {
+                            "type": "number",
+                            "description": "Stake amount in USD",
+                            "default": 10
+                        },
+                        "duration": {
+                            "type": "integer",
+                            "description": "Contract duration",
+                            "default": 5
+                        },
+                        "duration_unit": {
+                            "type": "string",
+                            "description": "Duration unit: t(ticks), s(seconds), m(minutes), h(hours), d(days)",
+                            "default": "t"
+                        }
+                    },
+                    "required": ["instrument"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "execute_demo_trade",
+                "description": "Execute a trade on Demo account (virtual money only). For educational demonstration of the full trading cycle.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "proposal_id": {
+                            "type": "string",
+                            "description": "Proposal ID from get_contract_quote"
+                        },
+                        "price": {
+                            "type": "number",
+                            "description": "Maximum price willing to pay"
+                        }
+                    },
+                    "required": ["proposal_id", "price"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "close_position",
+                "description": "Close an open contract position",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "contract_id": {
+                            "type": "integer",
+                            "description": "Contract ID to close"
+                        }
+                    },
+                    "required": ["contract_id"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_positions",
+                "description": "Get all currently open contract positions",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            }
+        }
+    ]
+
+
 # Tool execution mapping
 TOOL_FUNCTIONS = {
     # Market tools
@@ -300,6 +506,17 @@ TOOL_FUNCTIONS = {
     "generate_draft": generate_draft,
     "generate_thread": generate_thread,
     "format_for_platform": format_for_platform,
+    # Copy Trading tools
+    "get_top_traders": get_top_traders,
+    "get_trader_stats": get_trader_stats,
+    "recommend_trader": recommend_trader,
+    "start_copy_trade": start_copy_trade,
+    "stop_copy_trade": stop_copy_trade,
+    # Trading tools
+    "get_contract_quote": get_contract_quote,
+    "execute_demo_trade": execute_demo_trade,
+    "close_position": close_position,
+    "get_positions": get_positions,
 }
 
 

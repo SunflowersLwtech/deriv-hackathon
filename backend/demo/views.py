@@ -18,55 +18,119 @@ DEMO_USER_ID = "d1000000-0000-0000-0000-000000000001"
 logger = logging.getLogger(__name__)
 
 
+BUILTIN_SCENARIOS = {
+    "revenge_trading": {
+        "description": "Revenge Trading — rapid losses trigger emotional re-entry",
+        "expected_detection": "revenge_trading",
+        "expected_nudge": "You appear to be revenge trading after losses. Consider stepping away.",
+        "trade_sequence": [
+            {"instrument": "EUR/USD", "direction": "buy", "entry_price": 1.0850, "exit_price": 1.0830, "pnl": -200, "minutes_offset": 0, "duration_seconds": 300},
+            {"instrument": "EUR/USD", "direction": "sell", "entry_price": 1.0835, "exit_price": 1.0855, "pnl": -150, "minutes_offset": 2, "duration_seconds": 180},
+            {"instrument": "EUR/USD", "direction": "buy", "entry_price": 1.0860, "exit_price": 1.0842, "pnl": -180, "minutes_offset": 4, "duration_seconds": 120},
+            {"instrument": "EUR/USD", "direction": "sell", "entry_price": 1.0840, "exit_price": 1.0860, "pnl": -120, "minutes_offset": 6, "duration_seconds": 90},
+            {"instrument": "EUR/USD", "direction": "buy", "entry_price": 1.0865, "exit_price": 1.0855, "pnl": -100, "minutes_offset": 7, "duration_seconds": 60},
+        ],
+    },
+    "overtrading": {
+        "description": "Overtrading — excessive trade frequency in a single session",
+        "expected_detection": "overtrading",
+        "expected_nudge": "You've placed many trades in a short period. Consider slowing down.",
+        "trade_sequence": [
+            {"instrument": "EUR/USD", "direction": "buy" if i % 2 == 0 else "sell", "entry_price": 1.0850, "exit_price": 1.0850 + ((-1) ** (i % 3)) * 0.001, "pnl": (-1) ** (i % 3) * 50, "minutes_offset": i * 2, "duration_seconds": 60}
+            for i in range(15)
+        ],
+    },
+    "loss_chasing": {
+        "description": "Loss Chasing — increasing position sizes after consecutive losses",
+        "expected_detection": "loss_chasing",
+        "expected_nudge": "You are increasing trade sizes after losses. This is a common pattern to watch.",
+        "trade_sequence": [
+            {"instrument": "BTC/USD", "direction": "buy", "entry_price": 65000, "exit_price": 64900, "pnl": -100, "minutes_offset": 0, "duration_seconds": 600},
+            {"instrument": "BTC/USD", "direction": "buy", "entry_price": 64800, "exit_price": 64650, "pnl": -150, "minutes_offset": 15, "duration_seconds": 600},
+            {"instrument": "BTC/USD", "direction": "buy", "entry_price": 64500, "exit_price": 64250, "pnl": -250, "minutes_offset": 30, "duration_seconds": 600},
+            {"instrument": "BTC/USD", "direction": "buy", "entry_price": 64100, "exit_price": 63750, "pnl": -350, "minutes_offset": 45, "duration_seconds": 600},
+        ],
+    },
+    "healthy_session": {
+        "description": "Healthy Session — well-paced trades with good discipline",
+        "expected_detection": "none",
+        "expected_nudge": "Your trading session looks well-paced. Keep it up!",
+        "trade_sequence": [
+            {"instrument": "EUR/USD", "direction": "buy", "entry_price": 1.0850, "exit_price": 1.0935, "pnl": 85, "minutes_offset": 0, "duration_seconds": 3600},
+            {"instrument": "GBP/USD", "direction": "sell", "entry_price": 1.2700, "exit_price": 1.2740, "pnl": -40, "minutes_offset": 60, "duration_seconds": 3600},
+            {"instrument": "EUR/USD", "direction": "buy", "entry_price": 1.0840, "exit_price": 1.0960, "pnl": 120, "minutes_offset": 150, "duration_seconds": 3600},
+            {"instrument": "BTC/USD", "direction": "buy", "entry_price": 65000, "exit_price": 65060, "pnl": 60, "minutes_offset": 240, "duration_seconds": 3600},
+            {"instrument": "GOLD", "direction": "sell", "entry_price": 2350, "exit_price": 2353, "pnl": -30, "minutes_offset": 300, "duration_seconds": 3600},
+        ],
+    },
+}
+
+
 def _load_scenario_from_db(scenario_name: str):
-    """Load scenario from demo_scenarios table; return None if unavailable."""
+    """Load scenario from demo_scenarios table, falling back to built-in data."""
+    # Try database first
     try:
-        if "demo_scenarios" not in connection.introspection.table_names():
-            return None
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT trade_sequence, expected_detection, expected_nudge FROM demo_scenarios WHERE scenario_name = %s",
-                [scenario_name],
-            )
-            row = cursor.fetchone()
+        if "demo_scenarios" in connection.introspection.table_names():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT trade_sequence, expected_detection, expected_nudge FROM demo_scenarios WHERE scenario_name = %s",
+                    [scenario_name],
+                )
+                row = cursor.fetchone()
+            if row:
+                trade_sequence = row[0] if isinstance(row[0], list) else json.loads(row[0] or "[]")
+                return {
+                    "trade_sequence": trade_sequence,
+                    "expected_detection": row[1],
+                    "expected_nudge": row[2],
+                }
     except Exception as exc:
         logger.info("demo_scenarios table unavailable: %s", exc)
-        return None
 
-    if not row:
-        return None
+    # Fallback to built-in scenarios
+    builtin = BUILTIN_SCENARIOS.get(scenario_name)
+    if builtin:
+        return {
+            "trade_sequence": builtin["trade_sequence"],
+            "expected_detection": builtin["expected_detection"],
+            "expected_nudge": builtin["expected_nudge"],
+        }
+    return None
 
-    trade_sequence = row[0] if isinstance(row[0], list) else json.loads(row[0] or "[]")
-    return {
-        "trade_sequence": trade_sequence,
-        "expected_detection": row[1],
-        "expected_nudge": row[2],
-    }
 
 def _list_scenarios():
-    """List scenarios from Supabase/PostgreSQL demo_scenarios table."""
+    """List scenarios from database, falling back to built-in data."""
+    # Try database first
     try:
-        if "demo_scenarios" not in connection.introspection.table_names():
-            raise RuntimeError("demo_scenarios table not found")
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT scenario_name, description, expected_detection, expected_nudge FROM demo_scenarios ORDER BY scenario_name"
-            )
-            rows = cursor.fetchall()
-        if rows:
-            return [
-                {
-                    "name": row[0],
-                    "description": row[1],
-                    "expected_detection": row[2],
-                    "expected_nudge": row[3],
-                }
-                for row in rows
-            ]
+        if "demo_scenarios" in connection.introspection.table_names():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT scenario_name, description, expected_detection, expected_nudge FROM demo_scenarios ORDER BY scenario_name"
+                )
+                rows = cursor.fetchall()
+            if rows:
+                return [
+                    {
+                        "name": row[0],
+                        "description": row[1],
+                        "expected_detection": row[2],
+                        "expected_nudge": row[3],
+                    }
+                    for row in rows
+                ]
     except Exception as exc:
         logger.info("demo_scenarios listing unavailable: %s", exc)
 
-    return []
+    # Fallback to built-in scenarios
+    return [
+        {
+            "name": name,
+            "description": data["description"],
+            "expected_detection": data["expected_detection"],
+            "expected_nudge": data["expected_nudge"],
+        }
+        for name, data in BUILTIN_SCENARIOS.items()
+    ]
 
 
 class LoadScenarioView(APIView):
@@ -393,3 +457,101 @@ class WowMomentView(APIView):
         results["disclaimer"] = "This is analysis, not financial advice. All data is for educational purposes."
 
         return Response(results)
+
+
+# ─── Demo Script Views ──────────────────────────────────────────────
+
+class DemoScriptListView(APIView):
+    """GET /api/demo/scripts/ — List available demo scripts."""
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from demo.demo_script import list_scripts
+        return Response({"scripts": list_scripts()})
+
+
+class DemoScriptDetailView(APIView):
+    """GET /api/demo/scripts/<name>/ — Get a specific demo script with steps."""
+    permission_classes = [AllowAny]
+
+    def get(self, request, name):
+        from demo.demo_script import get_script
+        from dataclasses import asdict
+        script = get_script(name)
+        if not script:
+            return Response({"error": f"Script '{name}' not found"}, status=404)
+        return Response(asdict(script))
+
+
+class DemoRunScriptView(APIView):
+    """
+    POST /api/demo/run-script/
+    {"script_name": "full_showcase", "instrument": "BTC/USD", "user_id": "..."}
+
+    Executes all steps of a demo script sequentially and returns results.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        import time
+        import requests as http_requests
+        from demo.demo_script import get_script
+        from dataclasses import asdict
+
+        script_name = request.data.get("script_name", "full_showcase")
+        script = get_script(script_name)
+        if not script:
+            return Response({"error": f"Script '{script_name}' not found"}, status=404)
+
+        # Determine backend base URL
+        host = request.get_host()
+        scheme = "https" if request.is_secure() else "http"
+        base_url = f"{scheme}://{host}"
+
+        results = []
+        total_start = time.time()
+
+        for step in script.steps:
+            step_start = time.time()
+            step_result = {
+                "step_number": step.step_number,
+                "title": step.title,
+                "narration": step.narration,
+                "wow_factor": step.wow_factor,
+                "status": "success",
+                "result": {},
+                "duration_ms": 0,
+            }
+
+            try:
+                url = f"{base_url}{step.api_endpoint}"
+                if step.api_params:
+                    resp = http_requests.post(
+                        url,
+                        json=step.api_params,
+                        timeout=30,
+                        headers={"Content-Type": "application/json"},
+                    )
+                else:
+                    resp = http_requests.get(url, timeout=30)
+
+                step_result["result"] = resp.json() if resp.status_code == 200 else {"error": resp.text[:200]}
+                step_result["status"] = "success" if resp.status_code == 200 else "error"
+            except Exception as exc:
+                step_result["status"] = "error"
+                step_result["result"] = {"error": str(exc)}
+
+            step_result["duration_ms"] = int((time.time() - step_start) * 1000)
+            results.append(step_result)
+
+        total_ms = int((time.time() - total_start) * 1000)
+        has_errors = any(r["status"] == "error" for r in results)
+
+        return Response({
+            "script_name": script_name,
+            "opening_line": script.opening_line,
+            "closing_line": script.closing_line,
+            "status": "partial" if has_errors else "success",
+            "steps": results,
+            "total_duration_ms": total_ms,
+        })

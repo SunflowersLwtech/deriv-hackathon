@@ -223,7 +223,7 @@ class ApiClient {
       this.request<BatchAnalysis>("/behavior/trades/analyze_batch/", {
         method: "POST",
         body: { user_id: userId, hours },
-        requiresAuth: true,
+        requiresAuth: false,
         timeoutMs: TIMEOUT_ANALYSIS,
       })
     , 10000);
@@ -414,6 +414,89 @@ class ApiClient {
       method: "POST",
       timeoutMs: TIMEOUT_LLM,
       body: { message, agent_type: agentType, history, user_id: userId },
+    });
+  }
+
+  // ─── Copy Trading endpoints ───────────────────────────────────────
+  async getCopyTraders(limit: number = 10) {
+    return this.request<CopyTradingListResponse>("/agents/copytrading/", {
+      method: "POST",
+      body: { action: "list", limit },
+    });
+  }
+
+  async getTraderStats(traderId: string) {
+    return this.request<TraderStatsResponse>("/agents/copytrading/", {
+      method: "POST",
+      body: { action: "stats", trader_id: traderId },
+    });
+  }
+
+  async getTraderRecommendation(userId: string) {
+    return this.request<TraderRecommendationResponse>("/agents/copytrading/", {
+      method: "POST",
+      body: { action: "recommend", user_id: userId },
+      timeoutMs: TIMEOUT_LLM,
+    });
+  }
+
+  async startCopyTrading(traderId: string, apiToken: string) {
+    return this.request<CopyTradeActionResponse>("/agents/copytrading/", {
+      method: "POST",
+      body: { action: "start", trader_id: traderId, api_token: apiToken },
+    });
+  }
+
+  async stopCopyTrading(traderId: string, apiToken: string) {
+    return this.request<CopyTradeActionResponse>("/agents/copytrading/", {
+      method: "POST",
+      body: { action: "stop", trader_id: traderId, api_token: apiToken },
+    });
+  }
+
+  // ─── Trading endpoints ────────────────────────────────────────────
+  async getContractQuote(instrument: string, contractType: string = "CALL", amount: number = 10, duration: number = 5, durationUnit: string = "t") {
+    return this.request<ContractQuoteResponse>("/agents/trading/", {
+      method: "POST",
+      body: { action: "quote", instrument, contract_type: contractType, amount, duration, duration_unit: durationUnit },
+    });
+  }
+
+  async executeDemoTrade(proposalId: string, price: number) {
+    return this.request<DemoTradeResponse>("/agents/trading/", {
+      method: "POST",
+      body: { action: "buy", proposal_id: proposalId, price },
+    });
+  }
+
+  async closeDemoPosition(contractId: number) {
+    return this.request<ClosePositionResponse>("/agents/trading/", {
+      method: "POST",
+      body: { action: "sell", contract_id: contractId },
+    });
+  }
+
+  async getOpenPositions() {
+    return this.request<OpenPositionsResponse>("/agents/trading/", {
+      method: "POST",
+      body: { action: "positions" },
+    });
+  }
+
+  // ─── Demo script endpoints ────────────────────────────────────────
+  async getDemoScripts() {
+    return this.request<DemoScriptsResponse>("/demo/scripts/");
+  }
+
+  async getDemoScript(name: string) {
+    return this.request<DemoScript>(`/demo/scripts/${name}/`);
+  }
+
+  async runDemoScript(name: string, instrument?: string, userId?: string) {
+    return this.request<DemoRunResult>("/demo/run-script/", {
+      method: "POST",
+      body: { script_name: name, instrument, user_id: userId },
+      timeoutMs: TIMEOUT_PIPELINE,
     });
   }
 }
@@ -948,6 +1031,155 @@ export interface WowMomentResponse {
     total_found: number;
   } | string;
   disclaimer: string;
+}
+
+// ─── Copy Trading types ─────────────────────────────────────────────
+
+export interface CopyTrader {
+  loginid: string;
+  token: string;
+  avg_profit: number;
+  total_trades: number;
+  copiers: number;
+  performance_probability: number;
+  min_trade_stake?: number | null;
+  trade_types?: string[];
+  balance?: number | null;
+  currency?: string;
+  win_rate?: number;
+  avg_loss?: number;
+  active_since?: string | null;
+  _demo?: boolean;
+}
+
+export interface TraderStatsResponse {
+  trader_id: string;
+  stats: {
+    avg_profit: number;
+    total_trades: number;
+    copiers: number;
+    performance_probability: number;
+    monthly_profitable_trades: number;
+    active_since: string;
+  };
+  error?: string;
+}
+
+export interface TraderRecommendationResponse {
+  recommendations: Array<{
+    trader: CopyTrader;
+    compatibility_score: number;
+    reasons: string[];
+  }>;
+  disclaimer: string;
+  error?: string;
+}
+
+export interface CopyTradingListResponse {
+  traders: CopyTrader[];
+  count: number;
+  total_count: number;
+  source?: string;
+  disclaimer?: string;
+  error?: string;
+}
+
+export interface CopyTradeActionResponse {
+  success: boolean;
+  message: string;
+  disclaimer?: string;
+  error?: string;
+}
+
+// ─── Trading types ──────────────────────────────────────────────────
+
+export interface ContractQuoteResponse {
+  proposal_id: string;
+  instrument: string;
+  contract_type: string;
+  ask_price: number;
+  payout: number;
+  spot: number;
+  longcode: string;
+  duration: number;
+  duration_unit: string;
+  disclaimer: string;
+  error?: string;
+}
+
+export interface DemoTradeResponse {
+  contract_id: number;
+  buy_price: number;
+  balance_after: number;
+  longcode: string;
+  start_time: string;
+  disclaimer: string;
+  error?: string;
+}
+
+export interface ClosePositionResponse {
+  contract_id: number;
+  sold_for: number;
+  profit: number;
+  error?: string;
+}
+
+export interface OpenPosition {
+  contract_id: number;
+  instrument: string;
+  contract_type: string;
+  buy_price: number;
+  current_spot: number;
+  profit: number;
+  is_valid_to_sell: boolean;
+  longcode: string;
+}
+
+export interface OpenPositionsResponse {
+  positions: OpenPosition[];
+  count: number;
+  error?: string;
+}
+
+// ─── Demo script types ──────────────────────────────────────────────
+
+export interface DemoStep {
+  step_number: number;
+  title: string;
+  narration: string;
+  api_endpoint: string;
+  api_params: Record<string, unknown>;
+  expected_duration_sec: number;
+  wow_factor: string;
+}
+
+export interface DemoScript {
+  name: string;
+  total_duration_sec: number;
+  opening_line: string;
+  closing_line: string;
+  steps: DemoStep[];
+}
+
+export interface DemoScriptsResponse {
+  scripts: Array<{ name: string; description: string; total_duration_sec: number; step_count: number }>;
+}
+
+export interface DemoStepResult {
+  step_number: number;
+  title: string;
+  status: "success" | "error";
+  result: Record<string, unknown>;
+  duration_ms: number;
+  narration?: string;
+  wow_factor?: string;
+}
+
+export interface DemoRunResult {
+  script_name: string;
+  status: "success" | "partial" | "error";
+  steps: DemoStepResult[];
+  total_duration_ms: number;
 }
 
 // Singleton instance
