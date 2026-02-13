@@ -123,10 +123,18 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      {/* Ambient background glow */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-profit/5 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent/5 rounded-full blur-3xl" />
+      {/* Hero video background */}
+      <div className="fixed inset-0 overflow-hidden">
+        <video
+          autoPlay
+          muted
+          loop
+          playsInline
+          className="absolute inset-0 w-full h-full object-cover"
+        >
+          <source src="/videos/hero-reveal.mp4" type="video/mp4" />
+        </video>
+        <div className="absolute inset-0 bg-black/40" />
       </div>
 
       <div className="relative z-10 w-full max-w-sm">
@@ -153,7 +161,7 @@ export default function LoginPage() {
         </div>
 
         {/* Login Card */}
-        <div className="bg-card border border-border rounded-sm p-6">
+        <div className="bg-card/80 backdrop-blur-xl border border-border rounded-sm p-6">
           <h2 className="text-sm font-semibold text-white text-center mb-1 tracking-wide">
             Welcome to TradeIQ
           </h2>
