@@ -1,4 +1,9 @@
 import type { NextConfig } from "next";
+import path from "path";
+import { config } from "dotenv";
+
+// Load root TradeIQ/.env so frontend gets NEXT_PUBLIC_* vars (shared with backend)
+config({ path: path.resolve(__dirname, "../.env") });
 
 const nextConfig: NextConfig = {
   // "standalone" for Docker/Railway/Render deployments
