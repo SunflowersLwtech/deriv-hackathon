@@ -19,6 +19,19 @@ from .agent_team import (
     AnalysisReport,
     BehavioralSentinelInsight,
 )
+from copytrading.tools import (
+    get_top_traders,
+    get_trader_stats,
+    recommend_trader,
+    start_copy_trade,
+    stop_copy_trade,
+)
+from trading.tools import (
+    get_contract_quote,
+    execute_demo_trade,
+    close_position,
+    get_positions,
+)
 from dataclasses import asdict
 import json
 
@@ -88,6 +101,10 @@ class AgentChatView(APIView):
                 agent_type = "behavior"
             elif any(w in msg_lower for w in ["post", "bluesky", "content", "thread", "persona", "publish", "social"]):
                 agent_type = "content"
+            elif any(w in msg_lower for w in ["copy", "copier", "trader to follow", "mirror", "top trader", "copy trad"]):
+                agent_type = "copytrading"
+            elif any(w in msg_lower for w in ["trade", "contract", "buy", "sell", "position", "quote", "call", "put", "stake"]):
+                agent_type = "trading"
             else:
                 agent_type = "market"
 
@@ -321,3 +338,103 @@ class AgentContentView(APIView):
                 {"error": str(exc)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class AgentCopyTradingView(APIView):
+    """
+    POST /api/agents/copytrading/
+    {
+        "action": "list" | "stats" | "recommend" | "start" | "stop",
+        "trader_id": "...",
+        "user_id": "...",
+        "api_token": "...",
+        "limit": 10
+    }
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        action = request.data.get("action", "list")
+        trader_id = request.data.get("trader_id")
+        user_id = request.data.get("user_id")
+        api_token = request.data.get("api_token")
+        limit = request.data.get("limit", 10)
+
+        try:
+            if action == "list":
+                result = get_top_traders(limit=limit)
+            elif action == "stats":
+                if not trader_id:
+                    return Response({"error": "trader_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+                result = get_trader_stats(trader_id)
+            elif action == "recommend":
+                if not user_id:
+                    return Response({"error": "user_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+                result = recommend_trader(user_id)
+            elif action == "start":
+                if not trader_id or not api_token:
+                    return Response({"error": "trader_id and api_token are required"}, status=status.HTTP_400_BAD_REQUEST)
+                result = start_copy_trade(trader_id, api_token)
+            elif action == "stop":
+                if not trader_id or not api_token:
+                    return Response({"error": "trader_id and api_token are required"}, status=status.HTTP_400_BAD_REQUEST)
+                result = stop_copy_trade(trader_id, api_token)
+            else:
+                return Response({"error": f"Unknown action: {action}"}, status=status.HTTP_400_BAD_REQUEST)
+
+            return Response(result)
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AgentTradingView(APIView):
+    """
+    POST /api/agents/trading/
+    {
+        "action": "quote" | "buy" | "sell" | "positions",
+        "instrument": "...",
+        "contract_type": "CALL",
+        "amount": 10,
+        "duration": 5,
+        "duration_unit": "t",
+        "proposal_id": "...",
+        "price": 10.5,
+        "contract_id": 123
+    }
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        action = request.data.get("action", "quote")
+
+        try:
+            if action == "quote":
+                instrument = request.data.get("instrument")
+                if not instrument:
+                    return Response({"error": "instrument is required"}, status=status.HTTP_400_BAD_REQUEST)
+                result = get_contract_quote(
+                    instrument=instrument,
+                    contract_type=request.data.get("contract_type", "CALL"),
+                    amount=request.data.get("amount", 10),
+                    duration=request.data.get("duration", 5),
+                    duration_unit=request.data.get("duration_unit", "t"),
+                )
+            elif action == "buy":
+                proposal_id = request.data.get("proposal_id")
+                price = request.data.get("price")
+                if not proposal_id or price is None:
+                    return Response({"error": "proposal_id and price are required"}, status=status.HTTP_400_BAD_REQUEST)
+                result = execute_demo_trade(proposal_id, price)
+            elif action == "sell":
+                contract_id = request.data.get("contract_id")
+                if contract_id is None:
+                    return Response({"error": "contract_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+                result = close_position(contract_id)
+            elif action == "positions":
+                result = get_positions()
+            else:
+                return Response({"error": f"Unknown action: {action}"}, status=status.HTTP_400_BAD_REQUEST)
+
+            return Response(result)
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

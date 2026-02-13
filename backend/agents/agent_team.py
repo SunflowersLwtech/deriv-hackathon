@@ -115,6 +115,19 @@ class MarketCommentary:
 
 
 @dataclass
+class CopyTradingRecommendation:
+    """Output of Copy Trading Recommendation stage."""
+    top_traders: List[Dict[str, Any]]
+    ai_recommendation: Optional[Dict[str, Any]] = None
+    compatibility_scores: List[Dict[str, Any]] = field(default_factory=list)
+    generated_at: str = ""
+
+    def __post_init__(self):
+        if not self.generated_at:
+            self.generated_at = datetime.now().isoformat()
+
+
+@dataclass
 class PipelineResult:
     """Full pipeline output – every stage's result bundled together."""
     status: str  # "success" | "partial" | "error"
@@ -123,6 +136,7 @@ class PipelineResult:
     personalized_insight: Optional[Dict[str, Any]] = None
     sentinel_insight: Optional[Dict[str, Any]] = None
     market_commentary: Optional[Dict[str, Any]] = None
+    copytrading_recommendation: Optional[Dict[str, Any]] = None
     errors: List[str] = field(default_factory=list)
     pipeline_started_at: str = ""
     pipeline_finished_at: str = ""
@@ -740,7 +754,15 @@ def run_pipeline(
             result.status = "partial"
             result.errors.append(f"Content error: {exc}")
 
-    # ── Stage 5: Publish to Bluesky ──
+    # ── Stage 5: Copy Trading Recommendation (optional) ──
+    if user_id:
+        try:
+            recommendation = copytrading_recommend(user_id)
+            result.copytrading_recommendation = asdict(recommendation)
+        except Exception as exc:
+            result.errors.append(f"CopyTrading error: {exc}")
+
+    # ── Stage 6: Publish to Bluesky ──
     if not skip_content and result.market_commentary:
         try:
             publish_result = publish_to_bluesky(commentary)
@@ -758,6 +780,35 @@ def run_pipeline(
 
     result.pipeline_finished_at = datetime.now().isoformat()
     return result
+
+
+# ─── Copy Trading Recommendation ─────────────────────────────────────
+
+def copytrading_recommend(user_id: str) -> CopyTradingRecommendation:
+    """
+    Stage 5 – Copy Trading Recommendation.
+
+    Fetches top traders and runs AI compatibility analysis
+    against the user's trading profile.
+    """
+    from copytrading.tools import get_top_traders, recommend_trader
+
+    try:
+        traders_result = get_top_traders(limit=5)
+        top_traders = traders_result.get("traders", [])
+    except Exception:
+        top_traders = []
+
+    ai_rec = None
+    try:
+        ai_rec = recommend_trader(user_id)
+    except Exception as exc:
+        print(f"[CopyTrading] Recommendation error: {exc}")
+
+    return CopyTradingRecommendation(
+        top_traders=top_traders,
+        ai_recommendation=ai_rec,
+    )
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────

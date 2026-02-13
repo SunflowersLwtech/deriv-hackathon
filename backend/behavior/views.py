@@ -88,19 +88,6 @@ class TradeViewSet(viewsets.ModelViewSet):
         if analysis['needs_nudge']:
             # Generate AI-powered nudge
             nudge = generate_behavioral_nudge_with_ai(str(user.id), analysis)
-            
-            # Persist nudge to database
-            try:
-                from django.db import connection
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        """INSERT INTO nudges (user_id, nudge_type, message, trigger_reason, severity)
-                           VALUES (%s, %s, %s, %s, %s)""",
-                        [str(user.id), nudge.get('nudge_type', ''), nudge.get('message', ''),
-                         analysis.get('summary', ''), nudge.get('severity', 'low')]
-                    )
-            except Exception as e:
-                print(f"Error saving nudge: {e}")
 
             # Send nudge via WebSocket
             channel_layer = get_channel_layer()

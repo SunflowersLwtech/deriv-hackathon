@@ -8,6 +8,8 @@ from .views import (
     AgentAdvisorView,
     AgentSentinelView,
     AgentContentView,
+    AgentCopyTradingView,
+    AgentTradingView,
 )
 
 urlpatterns = [
@@ -20,4 +22,7 @@ urlpatterns = [
     path("advisor/", AgentAdvisorView.as_view(), name="agent-advisor"),
     path("sentinel/", AgentSentinelView.as_view(), name="agent-sentinel"),
     path("content-gen/", AgentContentView.as_view(), name="agent-content-gen"),
+    # Copy Trading & Trading
+    path("copytrading/", AgentCopyTradingView.as_view(), name="agent-copytrading"),
+    path("trading/", AgentTradingView.as_view(), name="agent-trading"),
 ]

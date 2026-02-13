@@ -36,6 +36,8 @@ INSTALLED_APPS = [
     "agents",
     "chat",
     "demo",
+    "copytrading",
+    "trading",
 ]
 
 MIDDLEWARE = [
