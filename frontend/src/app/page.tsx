@@ -33,8 +33,30 @@ const tabs = [
 export default function DashboardPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("overview");
+  const [isRefreshingInsights, setIsRefreshingInsights] = useState(false);
   const { data: metrics, isUsingMock: metricsIsMock, isBackendOnline } = useDashboardMetrics();
-  const { data: insights, isUsingMock: insightsIsMock } = useMarketInsights();
+  const { data: insights, isUsingMock: insightsIsMock, refetch: refetchInsights } = useMarketInsights();
+
+  const handleRefreshInsights = async () => {
+    setIsRefreshingInsights(true);
+    try {
+      // Call the refresh endpoint to generate new insights
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'}/market/insights/refresh/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 8, max_insights: 5 }),
+      });
+
+      if (response.ok) {
+        // Refetch the insights list
+        await refetchInsights?.();
+      }
+    } catch (error) {
+      console.error('Failed to refresh insights:', error);
+    } finally {
+      setIsRefreshingInsights(false);
+    }
+  };
 
   return (
     <AppShell>
@@ -133,28 +155,52 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <CollapsibleSection
-              title="RECENT AI INSIGHTS"
-              defaultOpen
-              badge={<DataSourceBadge isUsingMock={insightsIsMock} />}
-            >
-              <div className="p-5 space-y-4">
-                {insights.map((insight) => {
-                  const typeMap: Record<string, "market" | "behavior" | "content"> = {
-                    technical: "market", news: "market", sentiment: "market",
-                    behavior: "behavior", content: "content",
-                  };
-                  return (
-                    <InsightItem
-                      key={insight.id}
-                      type={typeMap[insight.type] || "market"}
-                      text={insight.content}
-                      time={insight.time}
-                    />
-                  );
-                })}
+            <div className="bg-card border border-border rounded-md overflow-hidden h-fit">
+              <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
+                <h3 className="text-xs font-semibold tracking-wider text-muted uppercase mono-data">
+                  RECENT AI INSIGHTS
+                </h3>
+                <div className="flex items-center gap-2">
+                  <DataSourceBadge isUsingMock={insightsIsMock} />
+                  <button
+                    onClick={handleRefreshInsights}
+                    disabled={isRefreshingInsights}
+                    className={cn(
+                      "px-2 py-1 text-[10px] font-medium tracking-wider mono-data rounded-sm transition-colors",
+                      "border border-accent/30 text-accent hover:bg-accent/10",
+                      isRefreshingInsights && "opacity-50 cursor-not-allowed"
+                    )}
+                    title="Generate fresh insights from latest news"
+                  >
+                    {isRefreshingInsights ? "REFRESHING..." : "REFRESH"}
+                  </button>
+                </div>
               </div>
-            </CollapsibleSection>
+              <div className="h-[200px] overflow-y-auto scrollbar-thin scrollbar-thumb-border scrollbar-track-surface">
+                <div className="p-3 space-y-2.5">
+                  {insights.length === 0 ? (
+                    <div className="text-sm text-muted text-center py-4">
+                      No insights available. Click REFRESH to generate insights from latest news.
+                    </div>
+                  ) : (
+                    insights.map((insight) => {
+                      const typeMap: Record<string, "market" | "behavior" | "content"> = {
+                        technical: "market", news: "market", sentiment: "market",
+                        behavior: "behavior", content: "content",
+                      };
+                      return (
+                        <InsightItem
+                          key={insight.id}
+                          type={typeMap[insight.type] || "market"}
+                          text={insight.content}
+                          time={insight.time}
+                        />
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 

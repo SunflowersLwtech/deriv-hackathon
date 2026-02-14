@@ -1197,3 +1197,206 @@ def fetch_active_symbols() -> List[Dict[str, Any]]:
             {"symbol": k, "display_name": k, "market": "forex", "deriv_symbol": v}
             for k, v in DERIV_SYMBOLS.items()
         ]
+
+
+def cleanup_old_insights(keep_count: int = 20) -> int:
+    """
+    Remove old insights, keeping only the most recent ones.
+
+    Args:
+        keep_count: Number of most recent insights to keep
+
+    Returns:
+        Number of insights deleted
+    """
+    try:
+        from .models import MarketInsight
+
+        total_count = MarketInsight.objects.count()
+        if total_count <= keep_count:
+            return 0
+
+        # Get IDs of insights to keep (most recent)
+        keep_ids = list(
+            MarketInsight.objects.order_by("-generated_at")
+            .values_list("id", flat=True)[:keep_count]
+        )
+
+        # Delete all others
+        deleted_count, _ = MarketInsight.objects.exclude(id__in=keep_ids).delete()
+        logger.info(f"Cleaned up {deleted_count} old insights, kept {keep_count} most recent")
+        return deleted_count
+
+    except Exception as e:
+        logger.error(f"Failed to cleanup old insights: {e}")
+        return 0
+
+
+def generate_insights_from_news(limit: int = 8, max_insights: int = 5) -> List[Dict[str, Any]]:
+    """
+    Generate AI insights from recent news headlines and save to database.
+
+    Args:
+        limit: Number of news articles to fetch
+        max_insights: Maximum number of insights to generate and store
+
+    Returns:
+        List of generated insights
+    """
+    try:
+        from .models import MarketInsight
+
+        # Cleanup old insights before generating new ones
+        cleanup_old_insights(keep_count=15)
+
+        # Fetch recent headlines
+        headlines = fetch_top_headlines(limit=limit)
+        if not headlines:
+            logger.info("No headlines found for insight generation")
+            return []
+
+        # Prepare news summary for LLM
+        news_text = "\n\n".join([
+            f"Article {i+1}:\n"
+            f"Title: {article.get('title', '')}\n"
+            f"Description: {article.get('description', '')}\n"
+            f"Source: {article.get('source', 'Unknown')}\n"
+            f"Published: {article.get('publishedAt', '')}"
+            for i, article in enumerate(headlines[:limit])
+        ])
+
+        # Use LLM to generate trading insights from news
+        prompt = f"""Based on these recent financial news articles, generate {max_insights} actionable trading insights for traders.
+
+{news_text}
+
+For each insight:
+1. Focus on market impact and trading implications
+2. Be specific about instruments/assets mentioned (e.g., BTC/USD, EUR/USD, Gold)
+3. Keep insights concise (1-2 sentences max)
+4. Classify the insight type as: "news", "technical", or "sentiment"
+5. Assign a sentiment score from -1.0 (very bearish) to 1.0 (very bullish)
+
+Return ONLY a JSON array with this exact format:
+[
+  {{
+    "instrument": "BTC/USD",
+    "insight_type": "news",
+    "content": "Bitcoin rebounds on institutional buying as SEC delays decision on ETF approval.",
+    "sentiment_score": 0.6
+  }},
+  ...
+]
+
+RULES:
+- Generate exactly {max_insights} insights
+- Each insight must have: instrument, insight_type, content, sentiment_score
+- insight_type must be one of: "news", "technical", "sentiment"
+- sentiment_score must be between -1.0 and 1.0
+- Return ONLY the JSON array, no other text"""
+
+        try:
+            llm = get_llm_client()
+            response = llm.simple_chat(
+                system_prompt=SYSTEM_PROMPT_MARKET,
+                user_message=prompt,
+                temperature=0.4,
+                max_tokens=800
+            )
+
+            # Parse JSON response
+            response_text = response.strip()
+            if response_text.startswith("```json"):
+                response_text = response_text.split("```json")[1].split("```")[0].strip()
+            elif response_text.startswith("```"):
+                response_text = response_text.split("```")[1].split("```")[0].strip()
+
+            insights_data = json.loads(response_text)
+
+            # Validate and save insights to database
+            saved_insights = []
+            for insight in insights_data[:max_insights]:
+                try:
+                    # Create MarketInsight object
+                    market_insight = MarketInsight.objects.create(
+                        instrument=insight.get("instrument", "GENERAL"),
+                        insight_type=insight.get("insight_type", "news"),
+                        content=insight.get("content", ""),
+                        sentiment_score=float(insight.get("sentiment_score", 0.0)),
+                        sources={
+                            "news_articles": [
+                                {
+                                    "title": h.get("title", ""),
+                                    "source": h.get("source", ""),
+                                    "url": h.get("url", "")
+                                }
+                                for h in headlines[:3]  # Store top 3 sources
+                            ]
+                        }
+                    )
+                    saved_insights.append({
+                        "id": str(market_insight.id),
+                        "instrument": market_insight.instrument,
+                        "insight_type": market_insight.insight_type,
+                        "content": market_insight.content,
+                        "sentiment_score": market_insight.sentiment_score,
+                        "generated_at": market_insight.generated_at.isoformat(),
+                    })
+                    logger.info(f"Created insight: {insight.get('content', '')[:50]}...")
+                except Exception as exc:
+                    logger.warning(f"Failed to save insight: {exc}")
+                    continue
+
+            logger.info(f"Generated and saved {len(saved_insights)} insights from {len(headlines)} news articles")
+            return saved_insights
+
+        except Exception as exc:
+            logger.error(f"LLM insight generation failed: {exc}")
+            # Fallback: create basic insights from headlines
+            saved_insights = []
+            for i, article in enumerate(headlines[:max_insights]):
+                try:
+                    # Extract instrument mention from title/description
+                    text = f"{article.get('title', '')} {article.get('description', '')}".lower()
+                    instrument = "GENERAL"
+                    for symbol in ["btc", "bitcoin"]:
+                        if symbol in text:
+                            instrument = "BTC/USD"
+                            break
+                    for symbol in ["eth", "ethereum"]:
+                        if symbol in text:
+                            instrument = "ETH/USD"
+                            break
+                    for symbol in ["eur", "euro"]:
+                        if symbol in text:
+                            instrument = "EUR/USD"
+                            break
+                    for symbol in ["gold", "xau"]:
+                        if symbol in text:
+                            instrument = "GOLD"
+                            break
+
+                    market_insight = MarketInsight.objects.create(
+                        instrument=instrument,
+                        insight_type="news",
+                        content=f"{article.get('title', 'Market Update')}: {article.get('description', '')[:150]}",
+                        sentiment_score=0.0,
+                        sources={"news_source": article.get("source", ""), "url": article.get("url", "")}
+                    )
+                    saved_insights.append({
+                        "id": str(market_insight.id),
+                        "instrument": market_insight.instrument,
+                        "insight_type": market_insight.insight_type,
+                        "content": market_insight.content,
+                        "sentiment_score": market_insight.sentiment_score,
+                        "generated_at": market_insight.generated_at.isoformat(),
+                    })
+                except Exception as exc:
+                    logger.warning(f"Failed to save fallback insight: {exc}")
+                    continue
+
+            return saved_insights
+
+    except Exception as e:
+        logger.error(f"Failed to generate insights from news: {e}")
+        return []

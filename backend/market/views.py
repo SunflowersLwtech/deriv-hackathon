@@ -2,6 +2,7 @@ from rest_framework import viewsets
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
+from rest_framework.decorators import action
 from .models import MarketInsight
 from .serializers import MarketInsightSerializer
 from .tools import (
@@ -10,13 +11,60 @@ from .tools import (
     get_sentiment,
     analyze_technicals,
     generate_market_brief,
+    generate_insights_from_news,
 )
 from agents.router import route_market_query
+from django.utils import timezone
+from datetime import timedelta
 
 
 class MarketInsightViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = MarketInsight.objects.all()
     serializer_class = MarketInsightSerializer
+
+    def list(self, request, *args, **kwargs):
+        """
+        List insights. If no insights exist or they're older than 2 hours,
+        automatically generate fresh insights from news.
+        """
+        # Check if we have recent insights (within last 2 hours)
+        two_hours_ago = timezone.now() - timedelta(hours=2)
+        recent_insights = MarketInsight.objects.filter(generated_at__gte=two_hours_ago)
+
+        if recent_insights.count() == 0:
+            # No recent insights, generate from news
+            try:
+                generate_insights_from_news(limit=8, max_insights=5)
+            except Exception as e:
+                # Log but don't fail the request
+                print(f"Failed to auto-generate insights: {e}")
+
+        # Return standard list response
+        return super().list(request, *args, **kwargs)
+
+    @action(detail=False, methods=['post'], permission_classes=[AllowAny])
+    def refresh(self, request):
+        """
+        POST /api/market/insights/refresh/
+        Manually trigger insight generation from latest news.
+        """
+        limit = int(request.data.get('limit', 8))
+        max_insights = int(request.data.get('max_insights', 5))
+
+        try:
+            insights = generate_insights_from_news(limit=limit, max_insights=max_insights)
+            return Response({
+                "status": "success",
+                "count": len(insights),
+                "insights": insights,
+                "message": f"Generated {len(insights)} fresh insights from news"
+            })
+        except Exception as e:
+            return Response({
+                "status": "error",
+                "error": str(e),
+                "message": "Failed to generate insights"
+            }, status=500)
 
 
 class AskMarketAnalystView(APIView):
