@@ -651,6 +651,7 @@ export interface MarketTechnicals {
     sma50?: number | null;
     rsi14?: number;
   };
+  insights?: string[];
   summary?: string;
   source?: string;
   error?: string;

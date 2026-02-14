@@ -812,6 +812,105 @@ def analyze_technicals(instrument: str, timeframe: str = "1h") -> Dict[str, Any]
         f"Observed volatility is {volatility}."
     )
 
+    # Generate detailed insights explaining WHY the trend is what it is
+    insights: list[str] = []
+
+    # Price vs SMA alignment
+    if sma50 is not None:
+        if current_price > sma20 > sma50:
+            insights.append(
+                f"Price ({current_price:.4f}) is trading above both the 20-period SMA ({sma20:.4f}) "
+                f"and the 50-period SMA ({sma50:.4f}), with the short-term average above the long-term — "
+                f"a classic bullish alignment indicating sustained upward momentum."
+            )
+        elif current_price < sma20 < sma50:
+            insights.append(
+                f"Price ({current_price:.4f}) is trading below both the 20-period SMA ({sma20:.4f}) "
+                f"and the 50-period SMA ({sma50:.4f}), with the short-term average below the long-term — "
+                f"a bearish alignment suggesting continued downward pressure."
+            )
+        else:
+            sma_diff_pct = abs(sma20 - sma50) / sma50 * 100
+            if sma_diff_pct < 0.1:
+                insights.append(
+                    f"The 20-period SMA ({sma20:.4f}) and 50-period SMA ({sma50:.4f}) are converging, "
+                    f"suggesting the market is indecisive and a breakout in either direction could be imminent."
+                )
+            elif current_price > sma20:
+                insights.append(
+                    f"Price is above the 20-period SMA ({sma20:.4f}) but the moving averages are not fully aligned — "
+                    f"the trend may be transitioning. Watch for a sustained cross of SMA20 above SMA50 for confirmation."
+                )
+            else:
+                insights.append(
+                    f"Price is below the 20-period SMA ({sma20:.4f}) and the moving averages show mixed signals — "
+                    f"the market is in a consolidation phase with no clear directional bias."
+                )
+
+    # RSI interpretation
+    if rsi14 >= 70:
+        insights.append(
+            f"RSI(14) is at {rsi14:.1f}, in overbought territory (above 70). "
+            f"This suggests the recent rally may be overextended and a pullback or consolidation could follow."
+        )
+    elif rsi14 <= 30:
+        insights.append(
+            f"RSI(14) is at {rsi14:.1f}, in oversold territory (below 30). "
+            f"This indicates selling pressure may be exhausted and a bounce or reversal could be developing."
+        )
+    elif 50 < rsi14 < 70:
+        insights.append(
+            f"RSI(14) at {rsi14:.1f} shows moderate bullish momentum — buyers are in control "
+            f"but the market is not yet overextended, leaving room for further upside."
+        )
+    elif 30 < rsi14 < 50:
+        insights.append(
+            f"RSI(14) at {rsi14:.1f} indicates mild bearish pressure — sellers have a slight edge "
+            f"but the market hasn't reached oversold conditions yet."
+        )
+    else:
+        insights.append(
+            f"RSI(14) at {rsi14:.1f} is at the neutral midpoint, suggesting balanced buying and selling pressure "
+            f"with no clear momentum advantage for either side."
+        )
+
+    # Support/resistance proximity
+    price_range = resistance - support
+    if price_range > 0:
+        dist_to_support_pct = (current_price - support) / price_range * 100
+        dist_to_resistance_pct = (resistance - current_price) / price_range * 100
+        if dist_to_resistance_pct < 15:
+            insights.append(
+                f"Price is very close to recent resistance at {resistance:.4f} (within {dist_to_resistance_pct:.0f}% of the range). "
+                f"A breakout above this level would signal strong bullish continuation; rejection could trigger a pullback."
+            )
+        elif dist_to_support_pct < 15:
+            insights.append(
+                f"Price is hovering near recent support at {support:.4f} (within {dist_to_support_pct:.0f}% of the range). "
+                f"A breakdown below this level would indicate further bearish momentum; a bounce could trigger a recovery."
+            )
+        else:
+            insights.append(
+                f"Price is trading in the mid-range between support ({support:.4f}) and resistance ({resistance:.4f}), "
+                f"giving room for movement in either direction before hitting key levels."
+            )
+
+    # Volatility context
+    if volatility == "high":
+        insights.append(
+            "Volatility is elevated, meaning larger price swings are occurring. "
+            "This can present opportunities but also increases risk — wider stops and careful position sizing are recommended."
+        )
+    elif volatility == "low":
+        insights.append(
+            "Volatility is low, indicating the market is quiet with small price movements. "
+            "A volatility expansion (breakout) could be building — watch for increased volume or a catalyst."
+        )
+    else:
+        insights.append(
+            "Volatility is at a moderate level, consistent with normal market conditions and healthy price action."
+        )
+
     return {
         "instrument": instrument,
         "timeframe": timeframe,
@@ -827,6 +926,7 @@ def analyze_technicals(instrument: str, timeframe: str = "1h") -> Dict[str, Any]
             "sma50": round(sma50, 6) if sma50 is not None else None,
             "rsi14": round(rsi14, 2),
         },
+        "insights": insights,
         "summary": summary,
         "source": "deriv",
     }

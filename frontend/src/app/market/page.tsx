@@ -226,8 +226,8 @@ export default function MarketPage() {
             </div>
           </div>
 
-          <div className="space-y-5">
-            <div className="bg-card border border-border rounded-md p-6">
+          <div className="flex flex-col gap-5 lg:max-h-[540px]">
+            <div className="bg-card border border-border rounded-md p-6 shrink-0">
               <h3 className="text-sm font-semibold tracking-wider text-muted uppercase mono-data mb-5">TECHNICAL INDICATORS</h3>
               {isMetricsLoading ? (
                 <div className="flex items-center gap-2 text-xs text-muted mono-data"><LoadingDots /> Loading indicators...</div>
@@ -267,11 +267,58 @@ export default function MarketPage() {
               )}
             </div>
 
-            <DataCard title="TREND" value={(technicals?.trend || "neutral").toUpperCase()} trend={technicals?.trend === "bullish" ? "up" : technicals?.trend === "bearish" ? "down" : "neutral"} glow>
-              <p className="text-[10px] text-muted mt-1">{technicals?.summary || "No technical summary available."}</p>
-            </DataCard>
+            {/* Trend Card — fixed box, scrollable insights */}
+            <div
+              className={cn(
+                "bg-card border rounded-md p-6 transition-all duration-200 flex flex-col flex-1 min-h-0 overflow-hidden",
+                technicals?.trend === "bullish" ? "border-profit/30" : technicals?.trend === "bearish" ? "border-loss/30" : "border-border"
+              )}
+            >
+              <div className="flex items-center justify-between mb-2.5 shrink-0">
+                <h3 className="text-xs font-semibold tracking-wider text-muted uppercase mono-data">TREND</h3>
+                <span
+                  className={cn(
+                    "text-xs mono-data font-semibold",
+                    technicals?.trend === "bullish" && "text-profit",
+                    technicals?.trend === "bearish" && "text-loss",
+                    (!technicals?.trend || technicals.trend === "neutral") && "text-muted"
+                  )}
+                >
+                  {technicals?.trend === "bullish" ? "▲" : technicals?.trend === "bearish" ? "▼" : "—"}
+                </span>
+              </div>
+              <div
+                className={cn(
+                  "text-3xl font-bold mono-data tracking-tight shrink-0",
+                  technicals?.trend === "bullish" && "text-profit",
+                  technicals?.trend === "bearish" && "text-loss",
+                  (!technicals?.trend || technicals.trend === "neutral") && "text-white"
+                )}
+              >
+                {(technicals?.trend || "neutral").toUpperCase()}
+              </div>
+              <p className="text-[10px] text-muted mt-1 shrink-0">{technicals?.summary || "No technical summary available."}</p>
 
-            <DataCard title="SENTIMENT" value={`${Math.round(sentimentPercent)}/100`} subtitle={sentiment?.sentiment || "neutral"} trend={sentimentPercent >= 50 ? "up" : "down"}>
+              {/* Scrollable insights */}
+              {technicals?.insights && technicals.insights.length > 0 && (
+                <div className="mt-3 border-t border-border pt-3 flex-1 min-h-0 flex flex-col overflow-hidden">
+                  <h4 className="text-[10px] font-semibold tracking-wider text-muted uppercase mono-data mb-2 shrink-0">WHY {(technicals?.trend || "neutral").toUpperCase()}?</h4>
+                  <div className="overflow-y-auto pr-1 space-y-2.5 flex-1 min-h-0">
+                    {technicals.insights.map((insight, i) => (
+                      <div key={i} className="flex gap-2">
+                        <span className={cn(
+                          "mt-1 w-1.5 h-1.5 rounded-full shrink-0",
+                          technicals.trend === "bullish" ? "bg-profit" : technicals.trend === "bearish" ? "bg-loss" : "bg-muted"
+                        )} />
+                        <p className="text-[11px] text-muted-foreground leading-relaxed mono-data">{insight}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <DataCard title="SENTIMENT" value={`${Math.round(sentimentPercent)}/100`} subtitle={sentiment?.sentiment || "neutral"} trend={sentimentPercent >= 50 ? "up" : "down"} className="shrink-0">
               <div className="w-full bg-surface rounded-full h-1.5 mt-2">
                 <div
                   className={cn("h-1.5 rounded-full transition-all duration-500", sentimentPercent >= 50 ? "bg-profit" : "bg-loss")}
