@@ -25,6 +25,7 @@ const INSTRUMENTS = [
 
 export default function TradingPage() {
   const { isConnected, defaultAccount, isLoading: authLoading, connect } = useDerivAuth();
+  const isReal = isConnected && defaultAccount?.account_type === "real";
 
   const [instrument, setInstrument] = usePageState("trading:instrument", INSTRUMENTS[0]);
   const [contractType, setContractType] = usePageState<"CALL" | "PUT">("trading:contractType", "CALL");
@@ -120,7 +121,7 @@ export default function TradingPage() {
       <div className="p-6 space-y-6 max-w-5xl mx-auto">
         {/* Account Mode Banner */}
         {!authLoading && (
-          isConnected ? (
+          isReal ? (
             <div className="w-full p-3 bg-profit/10 border border-profit/30 rounded-lg flex items-center justify-between">
               <span className="text-profit font-bold tracking-wider text-sm">
                 REAL ACCOUNT
@@ -134,10 +135,25 @@ export default function TradingPage() {
                 Live
               </span>
             </div>
+          ) : isConnected ? (
+            <div className="w-full p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg flex items-center justify-between">
+              <span className="text-blue-400 font-bold tracking-wider text-sm">
+                DEMO ACCOUNT
+                {defaultAccount && (
+                  <span className="ml-2 text-xs font-normal text-blue-400/70">
+                    {defaultAccount.deriv_login_id} ({defaultAccount.currency})
+                  </span>
+                )}
+                <span className="ml-2 text-xs font-normal">— Virtual money only. No real funds at risk.</span>
+              </span>
+              <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-500/20 text-blue-400 rounded uppercase tracking-wider">
+                Demo
+              </span>
+            </div>
           ) : (
             <div className="w-full p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg flex items-center justify-between">
               <span className="text-yellow-400 font-bold tracking-wider text-sm">
-                DEMO ACCOUNT — Virtual money only. No real funds at risk.
+                NOT CONNECTED — Connect your Deriv account to trade.
               </span>
               <button
                 onClick={connect}
@@ -152,11 +168,13 @@ export default function TradingPage() {
         {/* Header */}
         <div>
           <h1 className="text-2xl font-bold text-white tracking-wide">
-            {isConnected ? "TRADING" : "DEMO TRADING"}
+            {isReal ? "TRADING" : "DEMO TRADING"}
           </h1>
           <p className="text-muted text-sm mt-1">
-            {isConnected
-              ? "Trading with your connected Deriv account"
+            {isReal
+              ? "Trading with your connected Deriv real account"
+              : isConnected
+              ? "Trading with your Deriv demo account (virtual money)"
               : "Learn how Deriv contracts work with virtual money"}
           </p>
         </div>
@@ -305,8 +323,8 @@ export default function TradingPage() {
                 }`}
               >
                 <span className="inline-flex items-center gap-2">
-                  {tradeLoading ? "EXECUTING..." : (isConnected ? "EXECUTE TRADE" : "EXECUTE DEMO TRADE")}
-                  {!isConnected && (
+                  {tradeLoading ? "EXECUTING..." : (isReal ? "EXECUTE TRADE" : "EXECUTE DEMO TRADE")}
+                  {!isReal && (
                     <span className="px-2 py-0.5 text-[10px] bg-black/20 rounded">DEMO</span>
                   )}
                 </span>
@@ -373,8 +391,8 @@ export default function TradingPage() {
           <DisclaimerBadge />
         </div>
         <p className="text-center text-xs text-muted max-w-2xl mx-auto">
-          {isConnected
-            ? "Trading with your connected Deriv account. Real funds may be at risk. Trading involves risk. Not financial advice."
+          {isReal
+            ? "Trading with your connected Deriv real account. Real funds may be at risk. Trading involves risk. Not financial advice."
             : "This is a Demo account using virtual money. No real funds are at risk. Trading involves risk. This is for educational purposes only. Not financial advice."}
         </p>
       </div>

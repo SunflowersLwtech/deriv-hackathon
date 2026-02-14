@@ -66,7 +66,9 @@ export default function CopyTradingPage() {
   const handleGetRecommendation = async () => {
     setRecLoading(true);
     try {
-      const rec = await api.getTraderRecommendation("d1000000-0000-0000-0000-000000000001");
+      // Backend auto-detects user from auth token; pass placeholder
+      // that will be overridden server-side for authenticated users.
+      const rec = await api.getTraderRecommendation("auto");
       setRecommendation(rec);
     } catch {
       setRecommendation(null);

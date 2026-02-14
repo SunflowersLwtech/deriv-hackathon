@@ -360,12 +360,18 @@ class AgentCopyTradingView(APIView):
     def post(self, request):
         action = request.data.get("action", "list")
         trader_id = request.data.get("trader_id")
-        user_id = request.data.get("user_id")
         limit = request.data.get("limit", 10)
 
         # Resolve token from user's linked Deriv account (with env fallback)
         api_token = get_deriv_token(request)
         is_real = has_real_deriv_account(request)
+
+        # Auto-detect user_id from authenticated user, fall back to request body
+        req_user = getattr(request, "user", None)
+        if req_user and getattr(req_user, "is_authenticated", False):
+            user_id = str(req_user.id)
+        else:
+            user_id = request.data.get("user_id")
 
         try:
             if action == "list":
@@ -378,7 +384,7 @@ class AgentCopyTradingView(APIView):
                 result["is_demo"] = not is_real
             elif action == "recommend":
                 if not user_id:
-                    return Response({"error": "user_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+                    return Response({"error": "user_id is required. Sign in to get personalized recommendations."}, status=status.HTTP_400_BAD_REQUEST)
                 result = recommend_trader(user_id, api_token=api_token)
                 result["is_demo"] = not is_real
             elif action == "start":

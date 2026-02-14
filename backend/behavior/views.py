@@ -216,7 +216,12 @@ class TradeViewSet(viewsets.ModelViewSet):
         from deriv_auth.middleware import get_deriv_token
         from .trade_sync import sync_trades_for_user
 
-        user_id = request.data.get("user_id", DEMO_USER_ID)
+        # Prefer authenticated user's profile ID over request body / demo fallback
+        req_user = getattr(request, "user", None)
+        if req_user and getattr(req_user, "is_authenticated", False):
+            user_id = str(req_user.id)
+        else:
+            user_id = request.data.get("user_id", DEMO_USER_ID)
         days_back = int(request.data.get("days_back", 30))
 
         # Get or create user
@@ -437,7 +442,12 @@ class TradingTwinView(APIView):
         from behavior.trading_twin import generate_trading_twin
         from deriv_auth.middleware import has_real_deriv_account
 
-        user_id = request.data.get("user_id", DEMO_USER_ID)
+        # Prefer authenticated user's profile ID
+        req_user = getattr(request, "user", None)
+        if req_user and getattr(req_user, "is_authenticated", False):
+            user_id = str(req_user.id)
+        else:
+            user_id = request.data.get("user_id", DEMO_USER_ID)
         days = int(request.data.get("days", 30))
         starting_equity = float(request.data.get("starting_equity", 10000))
 
@@ -515,7 +525,12 @@ class SyncTradesView(APIView):
         from deriv_auth.middleware import get_deriv_token
         from .trade_sync import sync_trades_for_user
 
-        user_id = request.data.get("user_id", DEMO_USER_ID)
+        # Prefer authenticated user's profile ID over request body / demo fallback
+        req_user = getattr(request, "user", None)
+        if req_user and getattr(req_user, "is_authenticated", False):
+            user_id = str(req_user.id)
+        else:
+            user_id = request.data.get("user_id", DEMO_USER_ID)
         days_back = int(request.data.get("days_back", 30))
 
         # Resolve user

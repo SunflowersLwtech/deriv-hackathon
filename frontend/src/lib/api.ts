@@ -115,7 +115,11 @@ class ApiClient {
       ...headers,
     };
 
-    const accessToken = token || (requiresAuth ? await this.getAccessToken() : undefined);
+    // Always try to attach the auth token when available so backend can
+    // resolve the user's linked Deriv account instead of falling back to
+    // the env DERIV_TOKEN (demo).  Only throw when requiresAuth is true
+    // and no token could be obtained.
+    const accessToken = token || await this.getAccessToken();
     if (accessToken) {
       requestHeaders["Authorization"] = `Bearer ${accessToken}`;
     } else if (requiresAuth) {
