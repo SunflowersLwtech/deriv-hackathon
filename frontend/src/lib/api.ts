@@ -335,12 +335,25 @@ class ApiClient {
   }
 
   // Agent Team Pipeline endpoints
+  // Retry once on network failure (Render cold-start can cause first request to time out).
   async runPipeline(params: PipelineRequest = {}) {
-    return this.request<PipelineResponse>("/agents/pipeline/", {
-      method: "POST",
-      body: params,
-      timeoutMs: TIMEOUT_PIPELINE,
-    });
+    try {
+      return await this.request<PipelineResponse>("/agents/pipeline/", {
+        method: "POST",
+        body: params,
+        timeoutMs: TIMEOUT_PIPELINE,
+      });
+    } catch (firstErr) {
+      // Only retry on network-level errors (Failed to fetch / timeout), not HTTP errors
+      if (firstErr instanceof ApiError) throw firstErr;
+      // Wait briefly then retry once
+      await new Promise((r) => setTimeout(r, 2000));
+      return this.request<PipelineResponse>("/agents/pipeline/", {
+        method: "POST",
+        body: params,
+        timeoutMs: TIMEOUT_PIPELINE,
+      });
+    }
   }
 
   async runMonitor(instruments?: string[], customEvent?: CustomEvent) {

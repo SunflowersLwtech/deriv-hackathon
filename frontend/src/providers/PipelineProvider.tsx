@@ -40,6 +40,138 @@ export const DEMO_PORTFOLIO: PortfolioPosition[] = [
   { instrument: "Volatility 100", direction: "short", size: 0.5, entry_price: 1500000, pnl: -35.0 },
 ];
 
+// ─── Demo fallback generator ────────────────────────────────────────
+// Generates a complete PipelineResponse from client-side demo data
+// when the backend is unreachable / times out.
+
+const DEMO_FALLBACK_POOL = [
+  {
+    instrument: "BTC/USD",
+    price: 97500,
+    change: 5.2,
+    direction: "spike" as const,
+    magnitude: "high" as const,
+    sentiment: "Bullish — institutional accumulation detected amid ETF inflows.",
+    causes: [
+      "Spot Bitcoin ETF net inflows exceeded $500M in 24 hours",
+      "Short liquidation cascade triggered above $95K resistance",
+      "Macro risk-off rotation into digital assets ahead of CPI data",
+    ],
+    impact: "Your BTC/USD long position benefits from this spike. Unrealised P&L improved by ~$250. Consider scaling out partial profits at resistance.",
+    commentary: "BTC surged past $97K as ETF inflows surged and shorts got liquidated. Momentum is strong but resistance at $100K looms large. Stay disciplined.",
+    insight: "Historically, 5%+ daily BTC moves see a 60% retracement within 48h. Consider protecting profits with a trailing stop.",
+  },
+  {
+    instrument: "ETH/USD",
+    price: 3100,
+    change: -4.1,
+    direction: "drop" as const,
+    magnitude: "high" as const,
+    sentiment: "Bearish — whale sell-off and DeFi liquidations pressuring price.",
+    causes: [
+      "Large whale transferred 50K ETH to exchange wallets",
+      "DeFi protocol liquidations cascading across Aave and Compound",
+      "ETH/BTC ratio declining as capital rotates to Bitcoin",
+    ],
+    impact: "Your ETH/USD long position is under pressure. Unrealised P&L dropped by ~$50. Monitor the $3,000 support level closely.",
+    commentary: "ETH dropped below $3,100 as whale selling and DeFi liquidations compounded. The ETH/BTC ratio continues to weaken. Key support at $3,000.",
+    insight: "When ETH drops >4% while BTC rises, the divergence typically resolves within a week. Avoid adding to ETH longs until BTC stabilises.",
+  },
+  {
+    instrument: "Volatility 75",
+    price: 900000,
+    change: 2.3,
+    direction: "spike" as const,
+    magnitude: "medium" as const,
+    sentiment: "Neutral — synthetic index showing elevated but normal volatility.",
+    causes: [
+      "Algorithmic volatility expansion during high-activity session",
+      "Mean-reversion patterns forming after sustained low-volatility period",
+      "Increased retail trading volume during overlap hours",
+    ],
+    impact: "Your V75 long position gained ~$120. Synthetic indices are independent of macro events, so position sizing remains the key risk factor.",
+    commentary: "V75 saw a 2.3% spike driven by algorithmic expansion. Synthetic indices follow statistical patterns — watch for mean-reversion signals.",
+    insight: "V75 spikes of this magnitude typically revert within 2-4 hours. Consider tightening stops rather than adding to winners.",
+  },
+];
+
+function generateDemoFallback(customEvent?: CustomEvent): PipelineResponse {
+  const now = new Date().toISOString();
+
+  // Pick a demo scenario — either matching the custom event or random
+  let demo = DEMO_FALLBACK_POOL[Math.floor(Math.random() * DEMO_FALLBACK_POOL.length)];
+  if (customEvent?.instrument) {
+    const match = DEMO_FALLBACK_POOL.find(
+      (d) => d.instrument.toLowerCase() === customEvent.instrument.toLowerCase()
+    );
+    if (match) demo = match;
+  }
+
+  const changePct = customEvent?.change_pct ?? demo.change;
+  const price = customEvent?.price ?? demo.price;
+
+  return {
+    status: "success",
+    volatility_event: {
+      instrument: customEvent?.instrument ?? demo.instrument,
+      current_price: price,
+      price_change_pct: changePct,
+      direction: changePct > 0 ? "spike" : "drop",
+      magnitude: Math.abs(changePct) >= 3 ? "high" : Math.abs(changePct) >= 1.5 ? "medium" : "low",
+      detected_at: now,
+      raw_data: { source: "demo_fallback", note: "Backend unavailable — using client-side demo data" },
+      demo_mode: true,
+    },
+    analysis_report: {
+      instrument: customEvent?.instrument ?? demo.instrument,
+      event_summary: `${demo.instrument} ${changePct > 0 ? "surged" : "dropped"} ${Math.abs(changePct).toFixed(1)}% to $${price.toLocaleString()}. ${demo.sentiment}`,
+      root_causes: demo.causes,
+      news_sources: [
+        { title: "Demo data — connect backend for live analysis", url: "#", source: "TradeIQ Demo" },
+      ],
+      sentiment: changePct > 0 ? "bullish" : "bearish",
+      sentiment_score: changePct > 0 ? 0.72 : -0.65,
+      key_data_points: [
+        `Price: $${price.toLocaleString()}`,
+        `24h Change: ${changePct > 0 ? "+" : ""}${changePct.toFixed(1)}%`,
+        `Magnitude: ${Math.abs(changePct) >= 3 ? "HIGH" : "MEDIUM"}`,
+      ],
+      generated_at: now,
+    },
+    personalized_insight: {
+      instrument: customEvent?.instrument ?? demo.instrument,
+      impact_summary: demo.impact,
+      affected_positions: DEMO_PORTFOLIO.filter(
+        (p) => p.instrument.toLowerCase() === (customEvent?.instrument ?? demo.instrument).toLowerCase()
+      ),
+      risk_assessment: Math.abs(changePct) >= 3 ? "high" : "medium",
+      suggestions: [
+        "Review position sizing relative to current volatility",
+        "Consider setting tighter stop-losses during high-volatility periods",
+        "Avoid impulsive trades — wait for confirmation before adding to positions",
+      ],
+      generated_at: now,
+    },
+    sentinel_insight: null,
+    market_commentary: {
+      post: demo.commentary,
+      hashtags: ["#TradeIQ", "#MarketAlert", `#${(customEvent?.instrument ?? demo.instrument).replace(/[/ ]/g, "")}`],
+      data_points: [
+        `${customEvent?.instrument ?? demo.instrument} ${changePct > 0 ? "+" : ""}${changePct.toFixed(1)}%`,
+        `Price: $${price.toLocaleString()}`,
+      ],
+      platform: "demo",
+      published: false,
+      bluesky_uri: "",
+      bluesky_url: "",
+      generated_at: now,
+    },
+    errors: ["Backend unavailable — showing demo data. Results will be live when the server is reachable."],
+    pipeline_started_at: now,
+    pipeline_finished_at: now,
+  };
+}
+
 // ─── Context ─────────────────────────────────────────────────────────
 interface PipelineContextValue {
   stages: StageState;
@@ -94,11 +226,37 @@ function saveCache(stages: StageState, result: PipelineResponse | null, mode: "a
   } catch { /* quota exceeded — ignore */ }
 }
 
-// ─── Provider ────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Animate stage progression for a complete pipeline response. */
+async function animateStages(
+  response: PipelineResponse,
+  setStages: React.Dispatch<React.SetStateAction<StageState>>,
+) {
+  if (response.volatility_event) {
+    setStages((s) => ({ ...s, monitor: "done", analyst: "running" }));
+    await sleep(400);
+  }
+  if (response.analysis_report) {
+    setStages((s) => ({ ...s, analyst: "done", advisor: "running" }));
+    await sleep(400);
+  }
+  if (response.personalized_insight) {
+    setStages((s) => ({ ...s, advisor: "done", sentinel: "running" }));
+    await sleep(400);
+  }
+  // sentinel may be null (no user_id) — still mark done
+  setStages((s) => ({ ...s, sentinel: response.sentinel_insight ? "done" : "done", content: "running" }));
+  await sleep(400);
+  if (response.market_commentary) {
+    setStages((s) => ({ ...s, content: "done" }));
+  }
+}
+
+// ─── Provider ────────────────────────────────────────────────────────
 export default function PipelineProvider({ children }: { children: React.ReactNode }) {
   const cached = loadCache();
   const [stages, setStages] = useState<StageState>(cached?.stages ?? { ...IDLE_STAGES });
@@ -128,7 +286,6 @@ export default function PipelineProvider({ children }: { children: React.ReactNo
         const response = await api.runPipeline({
           custom_event: customEvent,
           user_portfolio: DEMO_PORTFOLIO,
-          // Backend auto-detects authenticated user from JWT
         });
 
         if (response.volatility_event) {
@@ -174,15 +331,12 @@ export default function PipelineProvider({ children }: { children: React.ReactNo
         }
 
         setResult(response);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Pipeline failed");
-        setStages({
-          monitor: "error",
-          analyst: "error",
-          advisor: "error",
-          sentinel: "error",
-          content: "error",
-        });
+      } catch {
+        // ── Fallback to demo data instead of showing "Failed to fetch" ──
+        const fallback = generateDemoFallback(customEvent);
+        await animateStages(fallback, setStages);
+        setResult(fallback);
+        setError("Backend unavailable — showing demo data");
       } finally {
         setIsRunning(false);
       }
@@ -198,32 +352,16 @@ export default function PipelineProvider({ children }: { children: React.ReactNo
     try {
       const response = await api.runPipeline({
         user_portfolio: DEMO_PORTFOLIO,
-        // Backend auto-detects authenticated user from JWT
       });
 
-      if (response.volatility_event) {
-        setStages((s) => ({ ...s, monitor: "done", analyst: "running" }));
-        await sleep(400);
-      }
-      if (response.analysis_report) {
-        setStages((s) => ({ ...s, analyst: "done", advisor: "running" }));
-        await sleep(400);
-      }
-      if (response.personalized_insight) {
-        setStages((s) => ({ ...s, advisor: "done", sentinel: "running" }));
-        await sleep(400);
-      }
-      if (response.sentinel_insight !== undefined) {
-        setStages((s) => ({ ...s, sentinel: "done", content: "running" }));
-        await sleep(400);
-      }
-      if (response.market_commentary) {
-        setStages((s) => ({ ...s, content: "done" }));
-      }
-
+      await animateStages(response, setStages);
       setResult(response);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Auto scan failed");
+    } catch {
+      // ── Fallback to demo data instead of showing "Failed to fetch" ──
+      const fallback = generateDemoFallback();
+      await animateStages(fallback, setStages);
+      setResult(fallback);
+      setError("Backend unavailable — showing demo data");
     } finally {
       setIsRunning(false);
     }
