@@ -40,7 +40,7 @@ export default function DataCard({
       <div className="flex items-center justify-between mb-2.5">
         <div className="flex items-center gap-2">
           {icon && <span className="text-base">{icon}</span>}
-          <h3 className="text-xs font-semibold tracking-wider text-muted uppercase mono-data">
+          <h3 className="text-xs font-semibold tracking-wider text-muted-foreground uppercase mono-data">
             {title}
           </h3>
         </div>
@@ -65,7 +65,7 @@ export default function DataCard({
             "text-3xl font-bold mono-data tracking-tight",
             trend === "up" && "text-profit",
             trend === "down" && "text-loss",
-            !trend && "text-white"
+            (trend === "neutral" || !trend) && "text-white"
           )}
         >
           {value}
@@ -74,7 +74,10 @@ export default function DataCard({
 
       {/* Subtitle */}
       {subtitle && (
-        <p className="text-xs text-muted-foreground mt-2 mono-data">{subtitle}</p>
+        <p className={cn(
+          "text-xs mt-2 mono-data",
+          trend === "up" ? "text-profit" : trend === "down" ? "text-loss" : "text-white"
+        )}>{subtitle}</p>
       )}
 
       {/* Custom children */}

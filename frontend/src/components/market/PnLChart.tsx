@@ -232,15 +232,15 @@ export default function PnLChart({
     <div className={cn("bg-card border border-border rounded-md p-6", className)}>
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h3 className="text-xs font-semibold tracking-wider text-muted uppercase mono-data">{title}</h3>
+          <h3 className="text-lg font-semibold tracking-wider text-muted uppercase mono-data">{title}</h3>
           <div className="flex items-baseline gap-3 mt-2">
-            <span className="text-3xl font-bold mono-data text-white">
+            <span className={cn("text-3xl font-bold mono-data", pnl > 0 ? "text-profit" : pnl < 0 ? "text-loss" : "text-white")}>
               {currentValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
             </span>
             <span
               className={cn(
                 "text-base mono-data font-semibold",
-                isPositive ? "text-profit glow-green" : "text-loss glow-red"
+                pnl > 0 ? "text-profit glow-green" : pnl < 0 ? "text-loss glow-red" : "text-white"
               )}
             >
               {isPositive ? "+" : ""}

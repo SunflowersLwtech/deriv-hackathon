@@ -30,7 +30,7 @@ export default function TickerBar() {
             <span
               className={cn(
                 "text-[11px] mono-data font-medium",
-                ticker.change >= 0 ? "text-profit" : "text-loss"
+                ticker.change > 0 ? "text-profit" : ticker.change < 0 ? "text-loss" : "text-white"
               )}
             >
               {ticker.change >= 0 ? "▲" : "▼"} {Math.abs(ticker.change).toFixed(2)}%

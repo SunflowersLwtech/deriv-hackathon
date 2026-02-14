@@ -50,8 +50,8 @@ export default function MarketOverview({ className }: { className?: string }) {
               </span>
             </div>
             <div className="col-span-3 text-right">
-              <span className={cn("text-sm mono-data font-medium", item.changePercent >= 0 ? "text-profit" : "text-loss")}>
-                {item.changePercent >= 0 ? "+" : ""}
+              <span className={cn("text-sm mono-data font-medium", item.changePercent > 0 ? "text-profit" : item.changePercent < 0 ? "text-loss" : "text-white")}>
+                {item.changePercent > 0 ? "+" : ""}
                 {item.changePercent.toFixed(2)}%
               </span>
             </div>

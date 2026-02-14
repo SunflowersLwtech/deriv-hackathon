@@ -23,7 +23,7 @@ export default function CollapsibleSection({
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
   return (
-    <div className={cn("border border-border rounded-md overflow-hidden", className)}>
+    <div className={cn("border border-border rounded-md overflow-hidden flex flex-col", className)}>
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
@@ -40,7 +40,7 @@ export default function CollapsibleSection({
           >
             ▶
           </span>
-          <span className="text-xs font-semibold tracking-wider text-muted uppercase mono-data">
+          <span className="text-lg font-semibold tracking-wider text-foreground uppercase mono-data">
             {title}
           </span>
         </div>
@@ -48,7 +48,7 @@ export default function CollapsibleSection({
       </button>
 
       {isOpen && (
-        <div className="border-t border-border animate-fade-in">
+        <div className="border-t border-border animate-fade-in flex-1 overflow-auto">
           {children}
         </div>
       )}

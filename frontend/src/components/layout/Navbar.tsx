@@ -96,33 +96,33 @@ export default function Navbar() {
 
   return (
     <nav className="sticky top-0 z-50 bg-[#131722] border-b border-[#2a2e39]">
-      <div className="flex items-center h-[52px] px-6 lg:px-10">
+      <div className="flex items-center h-[60px] px-6 lg:px-10">
         {/* Left: Logo */}
-        <Link href="/" className="flex items-center gap-2.5 shrink-0">
+        <Link href="/" className="flex items-center gap-3 shrink-0">
           <Image
             src="/tradeiq_favicon.svg"
             alt="TradeIQ"
-            width={28}
-            height={28}
-            className="rounded"
+            width={36}
+            height={36}
+            className="rounded-md"
             priority
           />
-          <span className="text-white font-bold text-[16px] tracking-tight">
+          <span className="text-white font-bold text-[20px] tracking-tight">
             TradeIQ
           </span>
         </Link>
 
         {/* Center: Desktop Nav Links */}
-        <div className="hidden md:flex items-center justify-center flex-1 gap-6">
+        <div className="hidden md:flex items-center justify-center flex-1 gap-8">
           {navLinks.map((link) => (
             <Link
               key={link.href}
               href={link.href}
               className={cn(
-                "px-4 py-1.5 text-[14px] transition-colors rounded-sm",
+                "px-4 py-1.5 text-[16px] transition-all duration-200 rounded-full",
                 pathname === link.href
-                  ? "text-[#2962ff] font-semibold"
-                  : "text-[#787b86] font-normal hover:text-[#d1d4dc]"
+                  ? "text-[#4d8bff] font-semibold bg-[#4d8bff]/10"
+                  : "text-white font-normal hover:text-[#4d8bff] hover:bg-[#4d8bff]/10"
               )}
             >
               {link.label}
@@ -171,7 +171,7 @@ export default function Navbar() {
           {/* Mobile menu button */}
           <button
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="md:hidden p-1.5 text-[#787b86] hover:text-[#d1d4dc] transition-colors"
+            className="md:hidden p-1.5 text-[#787b86] hover:text-white transition-colors"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               {isMobileMenuOpen ? (
@@ -195,8 +195,8 @@ export default function Navbar() {
               className={cn(
                 "block px-6 py-3 text-[14px] font-medium border-b border-[#2a2e39]/50 transition-colors",
                 pathname === link.href
-                  ? "text-[#2962ff]"
-                  : "text-[#787b86] hover:text-[#d1d4dc] hover:bg-[#252a37]"
+                  ? "text-[#4d8bff] bg-[#4d8bff]/10"
+                  : "text-white hover:text-[#4d8bff] hover:bg-[#4d8bff]/10"
               )}
             >
               {link.label}
