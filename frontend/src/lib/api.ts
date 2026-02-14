@@ -130,8 +130,22 @@ class ApiClient {
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: response.statusText }));
-      throw new ApiError(response.status, error.detail || error.error || "Request failed");
+      const error = await response
+        .json()
+        .catch(() => ({ detail: response.statusText }));
+
+      // Backend (DRF) errors typically come back as:
+      // - {"detail": "..."} (default)
+      // - {"error": "<code>", "message": "..."} (our custom exception handler)
+      const message =
+        (error && typeof error === "object"
+          ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ((error as any).detail || (error as any).message || (error as any).error)
+          : undefined) ||
+        response.statusText ||
+        "Request failed";
+
+      throw new ApiError(response.status, String(message));
     }
 
     return response.json();

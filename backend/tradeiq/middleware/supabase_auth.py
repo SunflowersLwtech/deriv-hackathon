@@ -146,13 +146,18 @@ class SupabaseJWTAuthentication(BaseAuthentication):
             )
 
         # Build issuer URL for verification (optional but recommended).
-        supabase_url = getattr(settings, "SUPABASE_URL", "")
+        supabase_url = (getattr(settings, "SUPABASE_URL", "") or "").rstrip("/")
         issuer = f"{supabase_url}/auth/v1" if supabase_url else None
 
         decode_options = {
             "verify_exp": True,
             "verify_signature": True,
-            "require": ["sub", "exp", "iat"],
+            # Supabase access tokens can vary by version/provider. We require
+            # only the core claims we truly depend on.
+            "require": ["sub", "exp"],
+            # Audience validation is handled manually below to avoid rejecting
+            # tokens that omit `aud` (some providers / versions).
+            "verify_aud": False,
         }
 
         # If we don't have a SUPABASE_URL configured, skip issuer verification
@@ -165,7 +170,6 @@ class SupabaseJWTAuthentication(BaseAuthentication):
                 token,
                 secret,
                 algorithms=["HS256"],
-                audience="authenticated",
                 issuer=issuer if issuer else None,
                 options=decode_options,
             )
@@ -201,6 +205,29 @@ class SupabaseJWTAuthentication(BaseAuthentication):
                 detail="Token is missing 'sub' claim.",
                 code="token_missing_sub",
             )
+
+        # Validate audience when present (Supabase user tokens typically use
+        # aud="authenticated"). We don't rely on this claim for authorization,
+        # but it helps reject non-user API keys early.
+        aud = payload.get("aud")
+        if aud is not None:
+            if isinstance(aud, str):
+                if aud != "authenticated":
+                    raise AuthenticationFailed(
+                        detail="Token audience is invalid.",
+                        code="token_invalid_audience",
+                    )
+            elif isinstance(aud, list):
+                if "authenticated" not in aud:
+                    raise AuthenticationFailed(
+                        detail="Token audience is invalid.",
+                        code="token_invalid_audience",
+                    )
+            else:
+                raise AuthenticationFailed(
+                    detail="Token audience has an unexpected type.",
+                    code="token_invalid_audience",
+                )
 
         return payload
 
