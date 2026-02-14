@@ -120,7 +120,7 @@ export default function DashboardPage() {
                   title="Portfolio Value"
                   value={`$${metrics.portfolioValue.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
                   subtitle="Updated just now"
-                  trend={metrics.todayPnl > 0 ? "up" : metrics.todayPnl < 0 ? "down" : "neutral"}
+                  trend={metrics.totalPnl > 0 ? "up" : metrics.totalPnl < 0 ? "down" : "neutral"}
                   glow
                 />
                 <DataCard

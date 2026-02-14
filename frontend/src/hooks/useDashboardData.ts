@@ -6,6 +6,7 @@ import api from "@/lib/api";
 
 export interface DashboardMetrics {
   portfolioValue: number;
+  totalPnl: number;
   todayPnl: number;
   todayPnlPercent: number;
   riskScore: number;
@@ -15,6 +16,7 @@ export interface DashboardMetrics {
 
 const EMPTY_DASHBOARD: DashboardMetrics = {
   portfolioValue: 0,
+  totalPnl: 0,
   todayPnl: 0,
   todayPnlPercent: 0,
   riskScore: 0,
@@ -54,6 +56,7 @@ export function useDashboardMetrics() {
 
     return {
       portfolioValue,
+      totalPnl,
       todayPnl,
       todayPnlPercent,
       riskScore: latestMetric?.risk_score ?? 0,
