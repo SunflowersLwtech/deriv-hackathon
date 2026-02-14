@@ -51,16 +51,45 @@ except ImportError:
 
 # Deriv symbol mapping: user-friendly -> Deriv API symbol
 DERIV_SYMBOLS = {
+    # Major forex pairs
     "EUR/USD": "frxEURUSD",
     "GBP/USD": "frxGBPUSD",
     "USD/JPY": "frxUSDJPY",
     "AUD/USD": "frxAUDUSD",
     "USD/CHF": "frxUSDCHF",
+    "USD/CAD": "frxUSDCAD",
+    "NZD/USD": "frxNZDUSD",
+    # Cross pairs
+    "EUR/GBP": "frxEURGBP",
+    "EUR/JPY": "frxEURJPY",
+    "GBP/JPY": "frxGBPJPY",
+    "AUD/JPY": "frxAUDJPY",
+    "EUR/AUD": "frxEURAUD",
+    "EUR/CHF": "frxEURCHF",
+    "EUR/CAD": "frxEURCAD",
+    "GBP/AUD": "frxGBPAUD",
+    "GBP/CHF": "frxGBPCHF",
+    "GBP/CAD": "frxGBPCAD",
+    # Exotic pairs
+    "USD/CNH": "frxUSDCNH",
+    "USD/CNY": "frxUSDCNH",  # CNH = offshore yuan on Deriv
+    "USD/SGD": "frxUSDSGD",
+    "USD/HKD": "frxUSDHKD",
+    "USD/MXN": "frxUSDMXN",
+    "USD/ZAR": "frxUSDZAR",
+    "USD/TRY": "frxUSDTRY",
+    "USD/SEK": "frxUSDSEK",
+    "USD/NOK": "frxUSDNOK",
+    "USD/DKK": "frxUSDDKK",
+    # Crypto
     "BTC/USD": "cryBTCUSD",
     "ETH/USD": "cryETHUSD",
+    # Metals
     "GOLD": "frxXAUUSD",
     "XAU/USD": "frxXAUUSD",
     "SILVER": "frxXAGUSD",
+    "XAG/USD": "frxXAGUSD",
+    # Synthetic indices
     "Volatility 75": "R_75",
     "Volatility 75 Index": "R_75",
     "V75": "R_75",
@@ -68,6 +97,10 @@ DERIV_SYMBOLS = {
     "V100": "R_100",
     "Volatility 10": "R_10",
     "V10": "R_10",
+    "Volatility 25": "R_25",
+    "V25": "R_25",
+    "Volatility 50": "R_50",
+    "V50": "R_50",
 }
 
 TIMEFRAME_TO_GRANULARITY = {
@@ -174,19 +207,79 @@ def _run_async_in_new_thread(coro):
     return result[0]
 
 
+def _parse_currency_pair(instrument: str) -> Optional[tuple]:
+    """Try to parse an instrument string into (base, quote) currency codes.
+    Returns None if it doesn't look like a forex pair."""
+    # Handles: "CNY/MYR", "cny/myr", "CNYMYR", "USD CNY"
+    inst = instrument.strip().upper()
+    # Explicit separator
+    for sep in ("/", "-", "_", " "):
+        if sep in inst:
+            parts = inst.split(sep, 1)
+            if len(parts) == 2 and len(parts[0]) == 3 and len(parts[1]) == 3:
+                return parts[0], parts[1]
+    # No separator, 6-char string
+    if len(inst) == 6 and inst.isalpha():
+        return inst[:3], inst[3:]
+    return None
+
+
+def _fetch_open_exchange_rate(base: str, quote: str) -> Dict[str, Any]:
+    """Fetch exchange rate from the free Open Exchange Rates API (no key needed).
+    Uses https://open.er-api.com which provides ~170 currencies."""
+    try:
+        resp = requests.get(
+            f"https://open.er-api.com/v6/latest/{base}",
+            timeout=6,
+        )
+        if resp.status_code != 200:
+            return {"price": None, "error": f"Exchange rate API HTTP {resp.status_code}"}
+        data = resp.json()
+        if data.get("result") != "success":
+            return {"price": None, "error": "Exchange rate API returned failure"}
+        rates = data.get("rates", {})
+        rate = rates.get(quote)
+        if rate is None:
+            return {"price": None, "error": f"Currency {quote} not found in exchange rate data"}
+        return {
+            "instrument": f"{base}/{quote}",
+            "price": round(float(rate), 6),
+            "timestamp": data.get("time_last_update_utc", datetime.now(tz=timezone.utc).isoformat()),
+            "source": "open.er-api.com (ECB/market rates)",
+            "note": "Indicative mid-market rate, not a live trading quote.",
+        }
+    except Exception as e:
+        return {"price": None, "error": f"Exchange rate lookup failed: {e}"}
+
+
 def fetch_price_data(instrument: str) -> Dict[str, Any]:
     """
-    Fetch current price data for an instrument from Deriv WebSocket API.
-    Uses Redis cache to avoid redundant WebSocket calls (5-second TTL).
+    Fetch current price data for an instrument.
+
+    Priority:
+    1. Deriv WebSocket API (live trading quotes)
+    2. Free exchange rate API fallback (indicative mid-market rates for any
+       currency pair Deriv doesn't offer, e.g. CNY/MYR, THB/PHP, etc.)
 
     Args:
-        instrument: Trading instrument symbol (e.g., "EUR/USD")
+        instrument: Trading instrument symbol (e.g., "EUR/USD", "CNY/MYR")
 
     Returns:
         Dict with price, change, etc.
     """
     # Weekend guard: forex/commodity markets are closed Fri 22:00 – Sun 22:00 UTC
     if _is_forex_instrument(instrument) and _is_forex_market_closed():
+        # Even if Deriv is closed, try the free API for indicative rates
+        pair = _parse_currency_pair(instrument)
+        if pair:
+            fallback = _fetch_open_exchange_rate(pair[0], pair[1])
+            if fallback.get("price") is not None:
+                fallback["market_closed"] = True
+                fallback["note"] = (
+                    "Forex market is closed on weekends. "
+                    "This is an indicative mid-market rate from the last session."
+                )
+                return fallback
         return {
             "instrument": instrument,
             "price": None,
@@ -199,9 +292,7 @@ def fetch_price_data(instrument: str) -> Dict[str, Any]:
             "source": "deriv",
         }
 
-    # Check cache first (short 5s TTL for live prices — deduplicates the burst
-    # of concurrent requests that fire when dashboard hooks mount at once.
-    # This differs from cache.py's 300s default which is for longer-lived data.
+    # Check cache first (short 5s TTL for live prices)
     if _CACHE_AVAILABLE:
         try:
             cached = get_cached_price(instrument)
@@ -223,8 +314,23 @@ def fetch_price_data(instrument: str) -> Dict[str, Any]:
                 set_cached_price(instrument, result["price"], ttl_seconds=5)
             except Exception as exc:
                 logger.debug("Redis cache write failed for %s: %s", instrument, exc)
+
+        # If Deriv returned an error, try free exchange rate API as fallback
+        if result.get("price") is None and result.get("error"):
+            pair = _parse_currency_pair(instrument)
+            if pair:
+                fallback = _fetch_open_exchange_rate(pair[0], pair[1])
+                if fallback.get("price") is not None:
+                    return fallback
+
         return result
     except Exception as e:
+        # Last resort: try free exchange rate API
+        pair = _parse_currency_pair(instrument)
+        if pair:
+            fallback = _fetch_open_exchange_rate(pair[0], pair[1])
+            if fallback.get("price") is not None:
+                return fallback
         return {
             "instrument": instrument,
             "price": None,

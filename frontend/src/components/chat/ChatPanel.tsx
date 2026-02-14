@@ -17,6 +17,7 @@ export default function ChatPanel() {
 
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -25,6 +26,14 @@ export default function ChatPanel() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, streamingMessage, scrollToBottom]);
+
+  // Auto-resize textarea to fit content (max 5 rows)
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = Math.min(ta.scrollHeight, 120) + "px"; // 120px ≈ 5 rows
+  }, [input]);
 
   const handleSend = () => {
     if (!input.trim() || streamStatus !== "idle") return;
@@ -85,6 +94,7 @@ export default function ChatPanel() {
       <div className="border-t border-border bg-card/50 p-4 shrink-0">
         <div className="flex gap-2.5 items-end">
           <textarea
+            ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
