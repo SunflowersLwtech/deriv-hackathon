@@ -70,6 +70,63 @@ class BlueskyPublisher:
             "url": self._uri_to_url(response.uri),
         }
 
+    def post_with_image(
+        self,
+        text: str,
+        image_path: str,
+        image_alt_text: str = ""
+    ) -> dict:
+        """
+        Post to Bluesky with image embed.
+
+        AT Protocol supports up to 4 images per post.
+
+        Args:
+            text: Post text (max 300 chars)
+            image_path: Local file path to image
+            image_alt_text: Alt text for accessibility
+
+        Returns:
+            {
+                "uri": "at://...",
+                "cid": "...",
+                "url": "https://bsky.app/..."
+            }
+        """
+        # Read image file
+        with open(image_path, "rb") as f:
+            image_data = f.read()
+
+        # Upload blob to Bluesky
+        upload = self.client.upload_blob(image_data)
+
+        # Build embed
+        embed = {
+            "$type": "app.bsky.embed.images",
+            "images": [{
+                "image": upload.blob,
+                "alt": image_alt_text or ""
+            }]
+        }
+
+        # Add hashtags/facets
+        text = self._auto_hashtags(text)
+        facets = self._build_facets(text)
+
+        # Build kwargs
+        kwargs = {"text": text, "embed": embed}
+        if facets:
+            kwargs["facets"] = facets
+
+        # Send post
+        response = self.client.send_post(**kwargs)
+
+        return {
+            "uri": response.uri,
+            "cid": response.cid,
+            "url": self._uri_to_url(response.uri)
+        }
+
     def post_thread(self, posts: list) -> list:
         """Publish a thread (list of posts, each max 300 chars)."""
         results = []

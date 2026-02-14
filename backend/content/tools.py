@@ -245,8 +245,5 @@ def format_for_platform(content: str, platform: str) -> str:
     if platform.lower() == "bluesky":
         if len(formatted) > 300:
             formatted = formatted[:297] + "..."
-    elif platform.lower() == "twitter":
-        if len(formatted) > 280:
-            formatted = formatted[:277] + "..."
 
     return formatted

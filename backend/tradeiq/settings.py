@@ -42,6 +42,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",  # Serve static/media files with Daphne
     "django.contrib.sessions.middleware.SessionMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -115,6 +116,25 @@ USE_I18N = True
 USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# Media files (charts, AI images)
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
+
+# Ensure media folders exist
+os.makedirs(MEDIA_ROOT / "charts", exist_ok=True)
+os.makedirs(MEDIA_ROOT / "ai_images", exist_ok=True)
+
+# WhiteNoise configuration for serving media files with Daphne
+WHITENOISE_AUTOREFRESH = DEBUG
+WHITENOISE_USE_FINDERS = True
+WHITENOISE_MIMETYPES = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+}
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # DRF
@@ -150,6 +170,9 @@ CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only allow all origins in debug/demo mode
 # Bluesky (Appendix B) - from .env
 BLUESKY_HANDLE = os.environ.get("BLUESKY_HANDLE", "")
 BLUESKY_APP_PASSWORD = os.environ.get("BLUESKY_APP_PASSWORD", "")
+
+# Google Gemini - from .env
+GOOGLE_GEMINI_API_KEY = os.environ.get("GOOGLE_GEMINI_API_KEY", "")
 
 # Fixtures for demo scenarios (Section 10, 14)
 FIXTURE_DIRS = [os.path.join(BASE_DIR, "fixtures")]

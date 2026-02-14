@@ -263,10 +263,10 @@ class ApiClient {
     });
   }
 
-  async publishToBluesky(content: string, postType: string = "single") {
+  async publishToBluesky(content: string, postType: string = "single", imagePath?: string) {
     return this.request<PublishResponse>("/content/publish-bluesky/", {
       method: "POST",
-      body: { content, type: postType },
+      body: { content, type: postType, image_path: imagePath },
       timeoutMs: TIMEOUT_LLM,
     });
   }
@@ -783,6 +783,8 @@ export interface GenerateContentRequest {
   insight: string;
   platform: "bluesky_post" | "bluesky_thread";
   persona_id?: string;
+  include_image?: boolean;
+  analysis_report?: Record<string, unknown>;
 }
 
 export interface GenerateContentResponse {
@@ -791,6 +793,15 @@ export interface GenerateContentResponse {
   persona: string;
   disclaimer: string;
   status?: string;
+  image?: {
+    success: boolean;
+    image_url?: string;
+    image_path?: string;
+    image_type?: string;
+    classification_reasoning?: string;
+    classification_confidence?: number;
+    error?: string;
+  };
 }
 
 export interface PublishResponse {
@@ -903,6 +914,9 @@ export interface MarketCommentaryResponse {
   bluesky_uri: string;
   bluesky_url: string;
   generated_at: string;
+  image_url?: string;
+  image_path?: string;
+  image_type?: string;
 }
 
 export interface BehavioralSentinelResponse {

@@ -41,7 +41,7 @@ fi
 
 echo "Conda env active: ${CONDA_DEFAULT_ENV}"
 echo "Python: $(command -v python)"
-
+ 
 cd "${BACKEND_DIR}"
 
 # Run migrations before starting

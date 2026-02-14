@@ -18,6 +18,7 @@ export default function ContentWorkbench({ className, personas: externalPersonas
   const [platform, setPlatform] = useState<"bluesky_post" | "bluesky_thread">("bluesky_post");
   const [selectedPersona, setSelectedPersona] = useState("");
   const [generatedContent, setGeneratedContent] = useState<string>("");
+  const [generatedImage, setGeneratedImage] = useState<{ url?: string; path?: string; type?: string } | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<{ message: string; uri?: string } | null>(null);
@@ -32,6 +33,7 @@ export default function ContentWorkbench({ className, personas: externalPersonas
     if (!insight.trim()) return;
     setIsGenerating(true);
     setGeneratedContent("");
+    setGeneratedImage(null);
     setPublishResult(null);
 
     try {
@@ -39,8 +41,30 @@ export default function ContentWorkbench({ className, personas: externalPersonas
         insight: insight.trim(),
         platform,
         persona_id: selectedPersona,
+        include_image: true,
       });
       setGeneratedContent(response.content);
+
+      // Store image data if available
+      console.log('Image response:', response.image);
+      if (response.image?.success && response.image.image_url) {
+        // Make URL absolute if it's relative
+        let imageUrl = response.image.image_url;
+        if (!imageUrl.startsWith('http')) {
+          // Get backend base URL (without /api suffix)
+          let backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+          // Remove /api suffix if present to get the base server URL
+          backendUrl = backendUrl.replace(/\/api\/?$/, '');
+          imageUrl = `${backendUrl}${imageUrl}`;
+        }
+
+        console.log('Setting image:', { url: imageUrl, path: response.image.image_path });
+        setGeneratedImage({
+          url: imageUrl,
+          path: response.image.image_path || response.image.image_url,
+          type: response.image.image_type,
+        });
+      }
     } catch {
       setPublishResult({ message: "Content generation failed. Check API availability and persona configuration." });
     } finally {
@@ -53,19 +77,29 @@ export default function ContentWorkbench({ className, personas: externalPersonas
     setPublishResult(null);
 
     try {
-      const result = await api.publishToBluesky(generatedContent, platform === "bluesky_thread" ? "thread" : "single");
-      const primaryUri = result.uri || result.results?.[0]?.url || result.results?.[0]?.uri;
-      if (result.success && primaryUri) {
+      console.log('Publishing with image path:', generatedImage?.path);
+      const result = await api.publishToBluesky(
+        generatedContent,
+        platform === "bluesky_thread" ? "thread" : "single",
+        generatedImage?.path
+      );
+      console.log('Publish result:', result);
+
+      // Get the web URL (backend already converts AT URI to web URL)
+      const blueskyUrl = result.url || result.results?.[0]?.url;
+
+      if (result.success && blueskyUrl) {
         setPublishResult({
           message: "Published to Bluesky successfully!",
-          uri: primaryUri,
+          uri: blueskyUrl,
         });
       } else {
         setPublishResult({
           message: result.error || "Published, but no URI returned.",
         });
       }
-    } catch {
+    } catch (error) {
+      console.error('Publish error:', error);
       setPublishResult({
         message: "Draft saved. Connect Bluesky to publish.",
       });
@@ -216,6 +250,27 @@ export default function ContentWorkbench({ className, personas: externalPersonas
             <div className="text-sm text-muted leading-relaxed whitespace-pre-wrap mono-data">
               {generatedContent || (isGenerating && <LoadingDots className="py-2" />)}
             </div>
+
+            {/* Image Preview */}
+            {generatedImage?.url && (
+              <div className="mt-4 border-t border-border pt-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs text-muted-foreground uppercase tracking-wider mono-data">
+                    ATTACHED IMAGE
+                  </span>
+                  {generatedImage.type && (
+                    <span className="text-[10px] text-cyan bg-cyan/10 px-2 py-0.5 rounded-sm mono-data">
+                      {generatedImage.type}
+                    </span>
+                  )}
+                </div>
+                <img
+                  src={generatedImage.url}
+                  alt="Generated content image"
+                  className="w-full rounded-md border border-border object-cover max-h-96"
+                />
+              </div>
+            )}
           </div>
 
           {/* Actions */}
