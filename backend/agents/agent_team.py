@@ -690,18 +690,79 @@ Generate an English Bluesky post <= 300 chars. Return JSON only."""
         )
 
 
+# ─── Agent 4.5: Image Generator ───────────────────────────────────────
+
+def image_generator_create(
+    report: AnalysisReport,
+    commentary: MarketCommentary,
+    event: Optional[VolatilityEvent] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Agent 4.5 – Image Generator.
+
+    Generates appropriate image (chart or AI-generated) for market commentary.
+    """
+    try:
+        from content.image_orchestrator import generate_image_for_content
+
+        # Build analysis dict from event data (AnalysisReport has no raw_data)
+        analysis_dict: Dict[str, Any] = {
+            "instrument": report.instrument,
+            "current_price": event.current_price if event else None,
+            "change_pct": event.price_change_pct if event else None,
+            "sentiment": report.sentiment,
+            "event_summary": report.event_summary,
+        }
+
+        image_result = generate_image_for_content(
+            content_text=commentary.post,
+            analysis_report=analysis_dict
+        )
+
+        if image_result.get("success"):
+            return image_result
+        else:
+            print(f"[ImageGenerator] Failed: {image_result.get('error')}")
+            return None
+
+    except Exception as exc:
+        print(f"[ImageGenerator] Error: {exc}")
+        traceback.print_exc()
+        return None
+
+
 # ─── Bluesky Publisher ────────────────────────────────────────────────
 
-def publish_to_bluesky(commentary: MarketCommentary) -> Dict[str, Any]:
+def publish_to_bluesky(
+    commentary: MarketCommentary,
+    image_path: Optional[str] = None,
+) -> Dict[str, Any]:
     """
     Publish a MarketCommentary post to Bluesky via AT Protocol.
+
+    Args:
+        commentary: Market commentary to publish
+        image_path: Optional image file path (relative or absolute)
 
     Returns dict with published/bluesky_uri/bluesky_url fields.
     """
     from content.bluesky import BlueskyPublisher
+    from django.conf import settings
 
     publisher = BlueskyPublisher()
-    result = publisher.post(commentary.post)
+
+    # Convert relative image path to absolute path
+    if image_path and not image_path.startswith('/') and ':' not in image_path:
+        image_path = str(settings.MEDIA_ROOT / image_path)
+
+    if image_path:
+        result = publisher.post_with_image(
+            text=commentary.post,
+            image_path=image_path,
+            image_alt_text=f"Market analysis chart for {commentary.post[:50]}..."
+        )
+    else:
+        result = publisher.post(commentary.post)
 
     return {
         "published": True,
@@ -717,17 +778,19 @@ def run_pipeline(
     custom_event: Optional[Dict[str, Any]] = None,
     user_portfolio: Optional[List[Dict[str, Any]]] = None,
     skip_content: bool = False,
+    skip_images: bool = False,
     user_id: Optional[str] = None,
 ) -> PipelineResult:
     """
     Run the full Agent Team pipeline:
-      Monitor -> Analyst -> Advisor -> Sentinel -> Content Creator
+      Monitor -> Analyst -> Advisor -> Sentinel -> Content Creator -> Image Generator -> Publisher
 
     Args:
         instruments: Instruments to scan (default: major pairs)
         custom_event: Manual event trigger (bypasses monitor scan)
         user_portfolio: User positions for personalised insight
         skip_content: If True, skip content generation step
+        skip_images: If True, skip image generation step
         user_id: User UUID for behavioral sentinel (enables Stage 3.5)
 
     Returns:
@@ -784,6 +847,7 @@ def run_pipeline(
             result.errors.append(f"Sentinel error: {exc}")
 
     # ── Stage 4: Content Creator ──
+    commentary = None
     if not skip_content:
         try:
             commentary = content_creator_generate(report, insight)
@@ -791,6 +855,19 @@ def run_pipeline(
         except Exception as exc:
             result.status = "partial"
             result.errors.append(f"Content error: {exc}")
+
+    # ── Stage 4.5: Image Generator ──
+    image_path = None
+    if not skip_content and not skip_images and commentary:
+        try:
+            image_result = image_generator_create(report, commentary, event)
+            if image_result and image_result.get("success"):
+                image_path = image_result.get("image_path")
+                if result.market_commentary:
+                    result.market_commentary["image_url"] = image_result.get("image_url")
+                    result.market_commentary["image_type"] = image_result.get("image_type")
+        except Exception as exc:
+            result.errors.append(f"Image generation error: {exc}")
 
     # ── Stage 5: Copy Trading Recommendation (optional) ──
     if user_id:
@@ -801,9 +878,9 @@ def run_pipeline(
             result.errors.append(f"CopyTrading error: {exc}")
 
     # ── Stage 6: Publish to Bluesky ──
-    if not skip_content and result.market_commentary:
+    if not skip_content and result.market_commentary and commentary:
         try:
-            publish_result = publish_to_bluesky(commentary)
+            publish_result = publish_to_bluesky(commentary, image_path=image_path)
             result.market_commentary.update(publish_result)
         except Exception as exc:
             result.errors.append(f"Publish error: {exc}")

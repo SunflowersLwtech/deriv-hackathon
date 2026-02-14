@@ -25,7 +25,9 @@ class GenerateContentView(APIView):
     {
         "insight": "EUR/USD rose 0.5% on Fed comments",
         "platform": "bluesky_post" | "bluesky_thread",
-        "persona_id": "uuid" (optional, defaults to Calm Analyst)
+        "persona_id": "uuid" (optional, defaults to Calm Analyst),
+        "include_image": true | false (optional, defaults to true),
+        "analysis_report": {} (optional, market data for image generation)
     }
     """
     permission_classes = [AllowAny]
@@ -34,6 +36,8 @@ class GenerateContentView(APIView):
         insight = request.data.get("insight", "")
         platform = request.data.get("platform", "bluesky_post")
         persona_id = request.data.get("persona_id")
+        include_image = request.data.get("include_image", True)
+        analysis_report = request.data.get("analysis_report")
 
         if not insight:
             return Response({"error": "insight is required"}, status=400)
@@ -65,10 +69,24 @@ class GenerateContentView(APIView):
             )
             content = result.get("content", "")
 
+        # Generate image if requested
+        image_result = None
+        if include_image:
+            try:
+                from .image_orchestrator import generate_image_for_content
+                image_result = generate_image_for_content(
+                    content_text=content,
+                    analysis_report=analysis_report,
+                    persona_id=persona_id
+                )
+            except Exception as e:
+                image_result = {"error": str(e), "success": False}
+
         return Response({
             "content": content,
             "platform": platform,
             "persona": result.get("persona_name", ""),
+            "image": image_result if image_result and image_result.get("success") else None,
             "disclaimer": "This is AI-generated analysis, not financial advice.",
             "status": result.get("status", "draft"),
         })
@@ -114,6 +132,7 @@ class PublishToBlueskyView(APIView):
         content = request.data.get("content")
         post_id = request.data.get("post_id")
         post_type = request.data.get("type", "single")
+        image_path = request.data.get("image_path")
 
         # If post_id provided, get content from DB
         if post_id and not content:
@@ -125,6 +144,11 @@ class PublishToBlueskyView(APIView):
 
         if not content:
             return Response({"error": "content is required"}, status=400)
+
+        # Convert relative image path to absolute path
+        if image_path and not image_path.startswith('/') and ':' not in image_path:
+            from django.conf import settings
+            image_path = str(settings.MEDIA_ROOT / image_path)
 
         try:
             from .bluesky import BlueskyPublisher
@@ -139,20 +163,33 @@ class PublishToBlueskyView(APIView):
                 if not thread_posts:
                     return Response({"error": "thread content is empty"}, status=400)
                 results = publisher.post_thread(thread_posts)
+                return Response({
+                    "success": True,
+                    "status": "published",
+                    "platform": "bluesky",
+                    "uri": results[0].get("uri") if results else None,
+                    "url": results[0].get("url") if results else None,
+                    "results": results,
+                })
             else:
                 if isinstance(content, list):
                     content = "\n\n".join(str(item).strip() for item in content if str(item).strip())
                 if not isinstance(content, str):
                     return Response({"error": "content must be a string for single post"}, status=400)
-                results = publisher.post(content)
 
-            return Response({
-                "success": True,
-                "status": "published",
-                "platform": "bluesky",
-                "uri": results.get("uri") if isinstance(results, dict) else None,
-                "results": results if isinstance(results, list) else None,
-            })
+                if image_path:
+                    results = publisher.post_with_image(text=content, image_path=image_path)
+                else:
+                    results = publisher.post(content)
+
+                return Response({
+                    "success": True,
+                    "status": "published",
+                    "platform": "bluesky",
+                    "uri": results.get("uri"),
+                    "url": results.get("url"),
+                    "cid": results.get("cid"),
+                })
         except Exception as e:
             return Response({
                 "success": False,
@@ -221,3 +258,84 @@ class BlueskySearchView(APIView):
             return Response({"query": query, "posts": posts, "count": len(posts)})
         except Exception as e:
             return Response({"error": str(e), "posts": []}, status=500)
+
+
+class PublishToAllPlatformsView(APIView):
+    """Publish content to all platforms (currently Bluesky only)."""
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        content = request.data.get("content")
+        image_path = request.data.get("image_path")
+        post_type = request.data.get("type", "single")
+
+        if not content:
+            return Response({"error": "content is required"}, status=400)
+
+        # Convert relative image path to absolute path
+        if image_path and not image_path.startswith('/') and ':' not in image_path:
+            from django.conf import settings
+            image_path = str(settings.MEDIA_ROOT / image_path)
+
+        results = {}
+        try:
+            from .bluesky import BlueskyPublisher
+            publisher = BlueskyPublisher()
+
+            if image_path:
+                bluesky_result = publisher.post_with_image(
+                    text=content[:300],
+                    image_path=image_path
+                )
+            else:
+                bluesky_result = publisher.post(content[:300])
+
+            results["bluesky"] = {
+                "success": True,
+                "uri": bluesky_result.get("uri"),
+                "url": bluesky_result.get("url"),
+            }
+        except Exception as e:
+            results["bluesky"] = {"success": False, "error": str(e)}
+
+        return Response({
+            "success": any(r.get("success") for r in results.values()),
+            "results": results
+        })
+
+
+class TestImageGenerationView(APIView):
+    """Test endpoint for image generation without publishing."""
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        content = request.data.get("content", "")
+        analysis_report = request.data.get("analysis_report", {})
+        persona_id = request.data.get("persona_id", "calm_analyst")
+
+        if not content:
+            return Response({"error": "content is required"}, status=400)
+
+        try:
+            from .image_orchestrator import generate_image_for_content
+
+            image_result = generate_image_for_content(
+                content_text=content,
+                analysis_report=analysis_report,
+                persona_id=persona_id
+            )
+
+            return Response({
+                "success": image_result.get("success", False),
+                "image_url": image_result.get("image_url"),
+                "image_type": image_result.get("image_type"),
+                "classification_reasoning": image_result.get("classification_reasoning", ""),
+                "classification_confidence": image_result.get("classification_confidence", 0),
+                "error": image_result.get("error")
+            })
+
+        except Exception as e:
+            return Response({
+                "success": False,
+                "error": str(e)
+            }, status=500)
