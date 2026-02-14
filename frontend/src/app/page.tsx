@@ -52,9 +52,31 @@ function useTrades() {
 export default function DashboardPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("overview");
+  const [isRefreshingInsights, setIsRefreshingInsights] = useState(false);
   const { data: metrics, isUsingMock: metricsIsMock, isBackendOnline } = useDashboardMetrics();
-  const { data: insights, isUsingMock: insightsIsMock } = useMarketInsights();
+  const { data: insights, isUsingMock: insightsIsMock, refetch: refetchInsights } = useMarketInsights();
   const { data: trades, isUsingMock: tradesIsMock } = useTrades();
+
+  const handleRefreshInsights = useCallback(async () => {
+    setIsRefreshingInsights(true);
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/market/insights/refresh/`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ limit: 8, max_insights: 5 }),
+        }
+      );
+      if (response.ok) {
+        await refetchInsights();
+      }
+    } catch (error) {
+      console.error("Failed to refresh insights:", error);
+    } finally {
+      setIsRefreshingInsights(false);
+    }
+  }, [refetchInsights]);
 
   return (
     <AppShell>
@@ -162,9 +184,29 @@ export default function DashboardPage() {
                   <CollapsibleSection
                     title="RECENT AI INSIGHTS"
                     defaultOpen
-                    badge={<DataSourceBadge isUsingMock={insightsIsMock} />}
+                    badge={
+                      <div className="flex items-center gap-2">
+                        <DataSourceBadge isUsingMock={insightsIsMock} />
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleRefreshInsights(); }}
+                          disabled={isRefreshingInsights}
+                          className={cn(
+                            "px-2 py-0.5 text-[10px] font-medium tracking-wider mono-data rounded-sm transition-colors",
+                            "border border-accent/30 text-accent hover:bg-accent/10",
+                            isRefreshingInsights && "opacity-50 cursor-not-allowed"
+                          )}
+                        >
+                          {isRefreshingInsights ? "..." : "REFRESH"}
+                        </button>
+                      </div>
+                    }
                   >
                     <div className="max-h-[320px] overflow-y-auto p-5 space-y-4">
+                      {insights.length === 0 ? (
+                        <p className="text-sm text-muted mono-data text-center py-4">
+                          No insights available. Click REFRESH to generate from latest news.
+                        </p>
+                      ) : null}
                       {insights.map((insight) => {
                         const typeMap: Record<string, "market" | "behavior" | "content"> = {
                           technical: "market", news: "market", sentiment: "market",
@@ -196,11 +238,28 @@ export default function DashboardPage() {
               <CollapsibleSection
                 title="MARKET INSIGHTS"
                 defaultOpen
-                badge={<DataSourceBadge isUsingMock={insightsIsMock} />}
+                badge={
+                  <div className="flex items-center gap-2">
+                    <DataSourceBadge isUsingMock={insightsIsMock} />
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleRefreshInsights(); }}
+                      disabled={isRefreshingInsights}
+                      className={cn(
+                        "px-2 py-0.5 text-[10px] font-medium tracking-wider mono-data rounded-sm transition-colors",
+                        "border border-accent/30 text-accent hover:bg-accent/10",
+                        isRefreshingInsights && "opacity-50 cursor-not-allowed"
+                      )}
+                    >
+                      {isRefreshingInsights ? "..." : "REFRESH"}
+                    </button>
+                  </div>
+                }
               >
                 <div className="max-h-[480px] overflow-y-auto p-5 space-y-4">
                   {insights.length === 0 && (
-                    <p className="text-sm text-muted mono-data text-center py-6">No market insights available.</p>
+                    <p className="text-sm text-muted mono-data text-center py-6">
+                      No market insights available. Click REFRESH to generate from latest news.
+                    </p>
                   )}
                   {insights.map((insight) => {
                     const typeMap: Record<string, "market" | "behavior" | "content"> = {

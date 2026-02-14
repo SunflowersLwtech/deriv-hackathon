@@ -511,67 +511,132 @@ def _search_newsapi(query: str, limit: int) -> List[Dict[str, Any]]:
 
 
 def _fetch_finnhub_headlines(limit: int = 10) -> List[Dict[str, Any]]:
-    """Fallback: fetch general market news from Finnhub (free tier)."""
+    """
+    Fallback: fetch trading-focused market news from Finnhub (forex, crypto, general).
+    Aggregates multiple categories to ensure trading relevance.
+    """
     api_key = os.environ.get("FINNHUB_API_KEY", "")
     if not api_key:
         return []
-    try:
-        response = requests.get(
-            "https://finnhub.io/api/v1/news",
-            params={"category": "general", "token": api_key},
-            timeout=5,
-        )
-        if response.status_code != 200:
-            return []
-        items = response.json()
-        if not isinstance(items, list):
-            return []
-        return [
-            {
-                "title": (item.get("headline") or "").strip(),
-                "description": (item.get("summary") or "").strip(),
-                "url": item.get("url", ""),
-                "publishedAt": (
-                    datetime.fromtimestamp(item["datetime"], tz=timezone.utc).isoformat()
-                    if isinstance(item.get("datetime"), (int, float)) and item["datetime"] > 0
-                    else ""
-                ),
-                "source": item.get("source", ""),
-            }
-            for item in items[:limit]
-            if (item.get("headline") or "").strip()
-        ]
-    except Exception:
-        return []
 
+    categories = ["forex", "crypto", "general"]
+    all_articles: List[Dict[str, Any]] = []
 
-def fetch_top_headlines(category: str = "business", country: str = "us", limit: int = 10) -> List[Dict[str, Any]]:
-    """Fetch top headlines from NewsAPI, falling back to Finnhub news."""
-    api_key = os.environ.get("NEWS_API_KEY", "")
-    if api_key:
+    for category in categories:
         try:
             response = requests.get(
-                "https://newsapi.org/v2/top-headlines",
-                params={"category": category, "country": country, "apiKey": api_key, "pageSize": limit},
+                "https://finnhub.io/api/v1/news",
+                params={"category": category, "token": api_key},
                 timeout=5,
             )
-            if response.status_code == 200:
-                articles = [
-                    {
-                        "title": a.get("title", ""),
-                        "description": a.get("description", ""),
-                        "url": a.get("url", ""),
-                        "publishedAt": a.get("publishedAt", ""),
-                        "source": a.get("source", {}).get("name", ""),
-                    }
-                    for a in response.json().get("articles", [])[:limit]
-                ]
-                if articles:
-                    return articles
+            if response.status_code != 200:
+                continue
+            items = response.json()
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                headline = (item.get("headline") or "").strip()
+                if not headline:
+                    continue
+                all_articles.append({
+                    "title": headline,
+                    "description": (item.get("summary") or "").strip(),
+                    "url": item.get("url", ""),
+                    "publishedAt": (
+                        datetime.fromtimestamp(item["datetime"], tz=timezone.utc).isoformat()
+                        if isinstance(item.get("datetime"), (int, float)) and item["datetime"] > 0
+                        else ""
+                    ),
+                    "source": item.get("source", "Finnhub"),
+                    "category": category,
+                })
         except Exception:
-            pass
+            continue
 
-    # Fallback to Finnhub news (free tier, no rate limit issues)
+    # Deduplicate by URL and sort by date
+    seen_urls: set[str] = set()
+    deduped: List[Dict[str, Any]] = []
+    for article in all_articles:
+        url = article.get("url", "")
+        if url and url not in seen_urls:
+            seen_urls.add(url)
+            deduped.append(article)
+    deduped.sort(key=lambda x: x.get("publishedAt", ""), reverse=True)
+    return deduped[:limit]
+
+
+# Terms used by fetch_top_headlines and generate_insights_from_news to filter
+# articles for trading relevance.
+_TRADING_TERMS = {
+    "forex", "trading", "crypto", "bitcoin", "ethereum", "btc", "eth",
+    "stock", "market", "usd", "eur", "gbp", "jpy", "gold", "xau",
+    "currency", "exchange", "trader", "cfd", "options", "futures",
+    "commodities", "oil", "silver", "nasdaq", "dow", "s&p",
+}
+
+
+def fetch_top_headlines(limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    Fetch top trading & finance headlines from NewsAPI, falling back to Finnhub.
+    Focuses on forex, crypto, stocks, commodities, and market news relevant to
+    Deriv traders.
+    """
+    api_key = os.environ.get("NEWS_API_KEY", "")
+
+    if api_key:
+        trading_keywords = (
+            'forex OR cryptocurrency OR "stock market" OR "bitcoin" '
+            'OR "EUR/USD" OR "gold prices" OR "oil prices" OR "crypto market"'
+        )
+        trusted_sources = (
+            "bloomberg,reuters,financial-times,"
+            "the-wall-street-journal,cnbc,fortune,business-insider"
+        )
+
+        for sources_param in (trusted_sources, None):
+            try:
+                params: Dict[str, Any] = {
+                    "q": trading_keywords,
+                    "apiKey": api_key,
+                    "sortBy": "publishedAt",
+                    "language": "en",
+                    "pageSize": limit * 3,
+                }
+                if sources_param:
+                    params["sources"] = sources_param
+
+                response = requests.get(
+                    "https://newsapi.org/v2/everything",
+                    params=params,
+                    timeout=5,
+                )
+                if response.status_code != 200:
+                    continue
+
+                articles = response.json().get("articles", [])
+                region_blocklist = {"india", "indian rupee", "mumbai", "delhi", "sensex", "nifty"}
+
+                filtered: List[Dict[str, Any]] = []
+                for a in articles:
+                    combined = f"{(a.get('title') or '').lower()} {(a.get('description') or '').lower()}"
+                    if any(t in combined for t in region_blocklist):
+                        continue
+                    if any(t in combined for t in _TRADING_TERMS):
+                        filtered.append({
+                            "title": a.get("title", ""),
+                            "description": a.get("description", ""),
+                            "url": a.get("url", ""),
+                            "publishedAt": a.get("publishedAt", ""),
+                            "source": a.get("source", {}).get("name", ""),
+                        })
+                        if len(filtered) >= limit:
+                            break
+                if filtered:
+                    return filtered
+            except Exception as e:
+                logger.debug(f"NewsAPI trading headlines failed: {e}")
+
+    # Fallback to Finnhub market news
     return _fetch_finnhub_headlines(limit)
 
 
@@ -1196,3 +1261,157 @@ def fetch_active_symbols() -> List[Dict[str, Any]]:
             {"symbol": k, "display_name": k, "market": "forex", "deriv_symbol": v}
             for k, v in DERIV_SYMBOLS.items()
         ]
+
+
+# ─── News-based insight generation ──────────────────────────────────
+
+
+def cleanup_old_insights(keep_count: int = 20) -> int:
+    """Remove old insights, keeping only the most recent *keep_count*."""
+    try:
+        total = MarketInsight.objects.count()
+        if total <= keep_count:
+            return 0
+        keep_ids = list(
+            MarketInsight.objects.order_by("-generated_at")
+            .values_list("id", flat=True)[:keep_count]
+        )
+        deleted, _ = MarketInsight.objects.exclude(id__in=keep_ids).delete()
+        logger.info(f"Cleaned up {deleted} old insights, kept {keep_count}")
+        return deleted
+    except Exception as e:
+        logger.error(f"Failed to cleanup old insights: {e}")
+        return 0
+
+
+def generate_insights_from_news(limit: int = 8, max_insights: int = 5) -> List[Dict[str, Any]]:
+    """
+    Fetch recent headlines, run them through the LLM to produce trading
+    insights, and persist the results to ``MarketInsight``.
+    """
+    try:
+        cleanup_old_insights(keep_count=15)
+
+        headlines = fetch_top_headlines(limit=limit)
+        if not headlines:
+            logger.info("No headlines found for insight generation")
+            return []
+
+        news_text = "\n\n".join(
+            f"Article {i + 1}:\n"
+            f"Title: {a.get('title', '')}\n"
+            f"Description: {a.get('description', '')}\n"
+            f"Source: {a.get('source', 'Unknown')}\n"
+            f"Published: {a.get('publishedAt', '')}"
+            for i, a in enumerate(headlines[:limit])
+        )
+
+        prompt = (
+            f"Based on these recent financial news articles, generate {max_insights} "
+            "actionable trading insights for traders.\n\n"
+            f"{news_text}\n\n"
+            "For each insight:\n"
+            "1. Focus on market impact and trading implications\n"
+            "2. Be specific about instruments/assets (e.g., BTC/USD, EUR/USD, Gold)\n"
+            "3. Keep insights concise (1-2 sentences max)\n"
+            '4. Classify the insight type as: "news", "technical", or "sentiment"\n'
+            "5. Assign a sentiment score from -1.0 (very bearish) to 1.0 (very bullish)\n\n"
+            "Return ONLY a JSON array with this exact format:\n"
+            "[\n"
+            '  {"instrument": "BTC/USD", "insight_type": "news", '
+            '"content": "…", "sentiment_score": 0.6},\n'
+            "  ...\n"
+            "]\n\n"
+            "RULES:\n"
+            f"- Generate exactly {max_insights} insights\n"
+            "- Each insight must have: instrument, insight_type, content, sentiment_score\n"
+            '- insight_type must be one of: "news", "technical", "sentiment"\n'
+            "- sentiment_score must be between -1.0 and 1.0\n"
+            "- Return ONLY the JSON array, no other text"
+        )
+
+        saved: List[Dict[str, Any]] = []
+
+        try:
+            llm = get_llm_client()
+            response_text = llm.simple_chat(
+                system_prompt=SYSTEM_PROMPT_MARKET,
+                user_message=prompt,
+                temperature=0.4,
+                max_tokens=800,
+            ).strip()
+
+            # Strip markdown fences if present
+            if response_text.startswith("```json"):
+                response_text = response_text.split("```json")[1].split("```")[0].strip()
+            elif response_text.startswith("```"):
+                response_text = response_text.split("```")[1].split("```")[0].strip()
+
+            insights_data = json.loads(response_text)
+
+            top_sources = [
+                {"title": h.get("title", ""), "source": h.get("source", ""), "url": h.get("url", "")}
+                for h in headlines[:3]
+            ]
+
+            for insight in insights_data[:max_insights]:
+                try:
+                    obj = MarketInsight.objects.create(
+                        instrument=insight.get("instrument", "GENERAL"),
+                        insight_type=insight.get("insight_type", "news"),
+                        content=insight.get("content", ""),
+                        sentiment_score=float(insight.get("sentiment_score", 0.0)),
+                        sources={"news_articles": top_sources},
+                    )
+                    saved.append({
+                        "id": str(obj.id),
+                        "instrument": obj.instrument,
+                        "insight_type": obj.insight_type,
+                        "content": obj.content,
+                        "sentiment_score": obj.sentiment_score,
+                        "generated_at": obj.generated_at.isoformat(),
+                    })
+                except Exception as exc:
+                    logger.warning(f"Failed to save insight: {exc}")
+
+        except Exception as exc:
+            logger.error(f"LLM insight generation failed, falling back: {exc}")
+            # Fallback: create basic insights directly from headlines
+            for article in headlines[:max_insights]:
+                try:
+                    text = f"{article.get('title', '')} {article.get('description', '')}".lower()
+                    instrument = "GENERAL"
+                    for kw, sym in [
+                        ("btc", "BTC/USD"), ("bitcoin", "BTC/USD"),
+                        ("eth", "ETH/USD"), ("ethereum", "ETH/USD"),
+                        ("eur", "EUR/USD"), ("euro", "EUR/USD"),
+                        ("gold", "GOLD"), ("xau", "GOLD"),
+                    ]:
+                        if kw in text:
+                            instrument = sym
+                            break
+                    obj = MarketInsight.objects.create(
+                        instrument=instrument,
+                        insight_type="news",
+                        content=f"{article.get('title', 'Market Update')}: "
+                                f"{(article.get('description') or '')[:150]}",
+                        sentiment_score=0.0,
+                        sources={"news_source": article.get("source", ""), "url": article.get("url", "")},
+                    )
+                    saved.append({
+                        "id": str(obj.id),
+                        "instrument": obj.instrument,
+                        "insight_type": obj.insight_type,
+                        "content": obj.content,
+                        "sentiment_score": obj.sentiment_score,
+                        "generated_at": obj.generated_at.isoformat(),
+                    })
+                except Exception as exc:
+                    logger.warning(f"Failed to save fallback insight: {exc}")
+
+        logger.info(f"Generated {len(saved)} insights from {len(headlines)} articles")
+        return saved
+
+    except Exception as e:
+        logger.error(f"Failed to generate insights from news: {e}")
+        return []
