@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import api from "@/lib/api";
 import type { DerivAccount } from "@/lib/api";
 
@@ -13,6 +13,7 @@ export function useDerivAuth() {
   const [accounts, setAccounts] = useState<DerivAccount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isConnected, setIsConnected] = useState(false);
+  const oauthStartedRef = useRef(false);
 
   const defaultAccount = accounts.find((a) => a.is_default) ?? null;
 
@@ -36,9 +37,23 @@ export function useDerivAuth() {
   }, [fetchAccounts]);
 
   const connect = useCallback(() => {
-    const callbackUrl = `${window.location.origin}/auth/deriv/callback`;
-    const url = `${DERIV_OAUTH_URL}?app_id=${DERIV_APP_ID}&l=en&brand=deriv`;
-    window.location.assign(url);
+    // Guard against accidental double-clicks / double-invocations.
+    if (oauthStartedRef.current) return;
+    oauthStartedRef.current = true;
+
+    const redirectUri =
+      process.env.NEXT_PUBLIC_DERIV_REDIRECT_URI?.trim() ||
+      `${window.location.origin}/auth/deriv/callback`;
+
+    // Always pass redirect_uri so Deriv doesn't fall back to a stale URL
+    // configured in the Deriv developer console.
+    const url = new URL(DERIV_OAUTH_URL);
+    url.searchParams.set("app_id", String(DERIV_APP_ID));
+    url.searchParams.set("redirect_uri", redirectUri);
+    url.searchParams.set("l", "en");
+    url.searchParams.set("brand", "deriv");
+
+    window.location.assign(url.toString());
   }, []);
 
   const disconnect = useCallback(

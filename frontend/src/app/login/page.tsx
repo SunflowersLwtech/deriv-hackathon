@@ -219,7 +219,17 @@ export default function LoginPage() {
             onClick={() => {
               const appId = process.env.NEXT_PUBLIC_DERIV_APP_ID || "125719";
               const oauthUrl = process.env.NEXT_PUBLIC_DERIV_OAUTH_URL || "https://oauth.deriv.com/oauth2/authorize";
-              window.location.assign(`${oauthUrl}?app_id=${appId}&l=en&brand=deriv`);
+              const redirectUri =
+                process.env.NEXT_PUBLIC_DERIV_REDIRECT_URI?.trim() ||
+                `${window.location.origin}/auth/deriv/callback`;
+
+              const url = new URL(oauthUrl);
+              url.searchParams.set("app_id", String(appId));
+              url.searchParams.set("redirect_uri", redirectUri);
+              url.searchParams.set("l", "en");
+              url.searchParams.set("brand", "deriv");
+
+              window.location.assign(url.toString());
             }}
             className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-sm border border-border bg-surface text-white font-medium text-[12px] tracking-wide hover:bg-surface-hover transition-all duration-200 mb-3"
           >

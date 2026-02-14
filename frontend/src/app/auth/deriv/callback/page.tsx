@@ -36,6 +36,13 @@ export default function DerivOAuthCallbackPage() {
           return;
         }
 
+        // Remove sensitive tokens from the address bar ASAP.
+        try {
+          window.history.replaceState({}, "", "/auth/deriv/callback");
+        } catch {
+          // ignore
+        }
+
         await api.saveDerivOAuthTokens(accounts);
         setStatus("success");
 
