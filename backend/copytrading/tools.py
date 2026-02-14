@@ -5,94 +5,62 @@ from .deriv_copy import DerivCopyTradingClient
 
 logger = logging.getLogger(__name__)
 
-# Fallback demo traders shown when Deriv API returns empty list
-# (e.g. account hasn't started copying anyone, or token lacks permissions)
-DEMO_TRADERS = [
-    {
-        "loginid": "CR90000001",
-        "token": "demo_token_1",
-        "avg_profit": 12.50,
-        "total_trades": 342,
-        "copiers": 18,
-        "performance_probability": 0.72,
-        "min_trade_stake": 1.00,
-        "trade_types": ["CALL", "PUT"],
-        "active_since": "2024-03-15",
-        "win_rate": 68.4,
-        "avg_loss": -8.30,
-        "_demo": True,
-    },
-    {
-        "loginid": "CR90000002",
-        "token": "demo_token_2",
-        "avg_profit": 8.75,
-        "total_trades": 891,
-        "copiers": 45,
-        "performance_probability": 0.65,
-        "min_trade_stake": 0.50,
-        "trade_types": ["CALL", "PUT"],
-        "active_since": "2023-11-01",
-        "win_rate": 61.2,
-        "avg_loss": -6.10,
-        "_demo": True,
-    },
-    {
-        "loginid": "CR90000003",
-        "token": "demo_token_3",
-        "avg_profit": 22.30,
-        "total_trades": 156,
-        "copiers": 7,
-        "performance_probability": 0.81,
-        "min_trade_stake": 5.00,
-        "trade_types": ["CALL", "PUT"],
-        "active_since": "2024-08-20",
-        "win_rate": 74.1,
-        "avg_loss": -15.20,
-        "_demo": True,
-    },
-    {
-        "loginid": "CR90000004",
-        "token": "demo_token_4",
-        "avg_profit": 5.40,
-        "total_trades": 1247,
-        "copiers": 92,
-        "performance_probability": 0.58,
-        "min_trade_stake": 0.35,
-        "trade_types": ["CALL", "PUT"],
-        "active_since": "2022-06-10",
-        "win_rate": 55.8,
-        "avg_loss": -4.80,
-        "_demo": True,
-    },
-    {
-        "loginid": "CR90000005",
-        "token": "demo_token_5",
-        "avg_profit": 18.90,
-        "total_trades": 423,
-        "copiers": 31,
-        "performance_probability": 0.69,
-        "min_trade_stake": 2.00,
-        "trade_types": ["CALL", "PUT"],
-        "active_since": "2024-01-05",
-        "win_rate": 65.7,
-        "avg_loss": -11.40,
-        "_demo": True,
-    },
-    {
-        "loginid": "CR90000006",
-        "token": "demo_token_6",
-        "avg_profit": 31.20,
-        "total_trades": 89,
-        "copiers": 4,
-        "performance_probability": 0.85,
-        "min_trade_stake": 10.00,
-        "trade_types": ["CALL", "PUT"],
-        "active_since": "2025-02-01",
-        "win_rate": 78.7,
-        "avg_loss": -22.50,
-        "_demo": True,
-    },
-]
+def _generate_demo_traders(n: int = 30) -> List[Dict[str, Any]]:
+    """
+    Deterministic demo traders so the Copy page always has enough rows for demos.
+
+    These are only used when Deriv returns empty / partial results for demo users.
+    """
+    traders: List[Dict[str, Any]] = []
+    for i in range(1, max(int(n), 0) + 1):
+        # CR90000001 ... CR90000030 (matches the original style)
+        loginid = f"CR{90000000 + i:08d}"
+
+        # Create stable, plausible metrics without RNG.
+        performance_probability = round(0.55 + ((i * 7) % 31) / 100, 2)  # 0.55 - 0.85
+        total_trades = 80 + ((i * 73) % 1400)  # 80 - 1479
+        copiers = 2 + ((i * 11) % 95)  # 2 - 96
+        avg_profit = round(4.5 + ((i * 19) % 380) / 10, 2)  # 4.5 - 42.4
+        avg_loss = round(-3.5 - ((i * 17) % 260) / 10, 2)  # -3.5 - -29.5
+        win_rate = round(52 + ((i * 9) % 34) + (performance_probability - 0.55) * 20, 1)
+        min_trade_stake = round(max(0.35, ((i % 12) + 1) * 0.25), 2)
+
+        year = 2022 + (i % 4)  # 2022-2025
+        month = (i % 12) + 1
+        day = (i % 28) + 1
+        active_since = f"{year:04d}-{month:02d}-{day:02d}"
+
+        traders.append({
+            "loginid": loginid,
+            "token": f"demo_token_{i}",
+            "avg_profit": avg_profit,
+            "total_trades": total_trades,
+            "copiers": copiers,
+            "performance_probability": performance_probability,
+            "min_trade_stake": min_trade_stake,
+            "trade_types": ["CALL", "PUT"],
+            "active_since": active_since,
+            "win_rate": win_rate,
+            "avg_loss": avg_loss,
+            "_demo": True,
+        })
+    return traders
+
+
+# Fallback demo traders shown when Deriv returns empty/partial list.
+DEMO_TRADERS = _generate_demo_traders(30)
+
+
+def _demo_fill(limit: int, exclude_loginids: set[str] | None = None) -> List[Dict[str, Any]]:
+    exclude = exclude_loginids or set()
+    filled: List[Dict[str, Any]] = []
+    for t in DEMO_TRADERS:
+        if t.get("loginid") in exclude:
+            continue
+        filled.append(_normalize_trader(t))
+        if len(filled) >= limit:
+            break
+    return filled
 
 
 def _normalize_trader(trader: Dict[str, Any]) -> Dict[str, Any]:
@@ -144,7 +112,7 @@ def get_top_traders(limit: int = 10, api_token: str = None) -> Dict[str, Any]:
         traders = result.get("traders", [])
 
         if not traders:
-            demo_traders = [_normalize_trader(t) for t in DEMO_TRADERS[:safe_limit]]
+            demo_traders = _demo_fill(safe_limit)
             logger.info("Deriv copytrading_list returned empty — using demo data")
             return {
                 "traders": demo_traders,
@@ -190,16 +158,33 @@ def get_top_traders(limit: int = 10, api_token: str = None) -> Dict[str, Any]:
 
             enriched.append(_normalize_trader(trader_info))
 
+        # For demos, Deriv can legitimately return partial lists (e.g. user only copies 1 trader).
+        # Fill the remaining rows with deterministic demo traders so the UI isn't empty/sparse.
+        if len(enriched) < safe_limit:
+            exclude = {t.get("loginid", "") for t in enriched}
+            demo_traders = _demo_fill(safe_limit - len(enriched), exclude_loginids=exclude)
+            enriched = enriched + demo_traders
+            source = "mixed_fallback"
+            disclaimer = (
+                "Showing live Deriv copy-trading data plus demo sample traders for UI demonstration. "
+                "Past performance is not indicative of future results."
+            )
+            total_count = len(enriched)
+        else:
+            source = "deriv_api"
+            disclaimer = "Past performance is not indicative of future results. This is educational information."
+            total_count = len(traders)
+
         return {
             "traders": enriched,
             "count": len(enriched),
-            "total_count": len(traders),
-            "source": "deriv_api",
-            "disclaimer": "Past performance is not indicative of future results. This is educational information.",
+            "total_count": total_count,
+            "source": source,
+            "disclaimer": disclaimer,
         }
 
     except Exception as e:
-        demo_traders = [_normalize_trader(t) for t in DEMO_TRADERS[:safe_limit]]
+        demo_traders = _demo_fill(safe_limit)
         logger.exception("Copy trading get_top_traders failed: %s", e)
         return {
             "traders": demo_traders,

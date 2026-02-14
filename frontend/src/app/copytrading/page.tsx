@@ -28,6 +28,7 @@ export default function CopyTradingPage() {
   const [recLoading, setRecLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dataSource, setDataSource] = usePageState<string>("copy:source", "");
+  const isFallbackSource = dataSource === "demo_fallback" || dataSource === "mixed_fallback";
 
   useEffect(() => {
     const loadTraders = async () => {
@@ -151,10 +152,10 @@ export default function CopyTradingPage() {
         )}
 
         {/* Demo data source notice */}
-        {dataSource === "demo_fallback" && isConnected && (
+        {isFallbackSource && isConnected && (
           <div className="p-3 bg-warning/5 border border-warning/20 rounded-md">
             <p className="text-warning text-xs font-medium">
-              Showing demo traders. Your account is connected but live copy trading data is currently unavailable.
+              Showing demo sample traders. Your account is connected but live copy trading data is incomplete/unavailable.
             </p>
           </div>
         )}
