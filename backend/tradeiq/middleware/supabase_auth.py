@@ -13,6 +13,7 @@ Usage in settings.py:
 """
 
 import logging
+from functools import lru_cache
 
 import jwt
 from django.conf import settings
@@ -22,6 +23,18 @@ from rest_framework.exceptions import AuthenticationFailed
 from behavior.models import UserProfile
 
 logger = logging.getLogger(__name__)
+
+_ALLOWED_JWT_ALGS = {"HS256", "RS256", "ES256"}
+
+
+def _get_jwks_url(supabase_url: str) -> str:
+    # Supabase exposes JWKS publicly (no apikey) at this endpoint.
+    return f"{supabase_url.rstrip('/')}/auth/v1/.well-known/jwks.json"
+
+
+@lru_cache(maxsize=8)
+def _get_jwk_client(jwks_url: str) -> "jwt.PyJWKClient":
+    return jwt.PyJWKClient(jwks_url)
 
 
 # ---------------------------------------------------------------------------
@@ -137,17 +150,24 @@ class SupabaseJWTAuthentication(BaseAuthentication):
 
     def _decode_token(self, token: str) -> dict:
         """Decode and verify the Supabase JWT."""
-        secret = getattr(settings, "SUPABASE_JWT_SECRET", "")
-        if not secret:
-            logger.error("SUPABASE_JWT_SECRET is not configured.")
-            raise AuthenticationFailed(
-                detail="Server authentication is misconfigured.",
-                code="auth_server_error",
-            )
-
         # Build issuer URL for verification (optional but recommended).
         supabase_url = (getattr(settings, "SUPABASE_URL", "") or "").rstrip("/")
         issuer = f"{supabase_url}/auth/v1" if supabase_url else None
+
+        try:
+            header = jwt.get_unverified_header(token)
+        except jwt.DecodeError as exc:
+            raise AuthenticationFailed(
+                detail=f"Token is malformed: {exc}",
+                code="token_malformed",
+            )
+
+        alg = header.get("alg")
+        if not alg or alg not in _ALLOWED_JWT_ALGS:
+            raise AuthenticationFailed(
+                detail="Token algorithm is not allowed.",
+                code="token_invalid_alg",
+            )
 
         decode_options = {
             "verify_exp": True,
@@ -166,13 +186,40 @@ class SupabaseJWTAuthentication(BaseAuthentication):
             decode_options["verify_iss"] = False
 
         try:
-            payload = jwt.decode(
-                token,
-                secret,
-                algorithms=["HS256"],
-                issuer=issuer if issuer else None,
-                options=decode_options,
-            )
+            # Supabase now signs JWTs using asymmetric keys (e.g., ES256). When
+            # that's the case, validate using the public JWKS endpoint.
+            if alg in ("RS256", "ES256"):
+                if not supabase_url:
+                    raise AuthenticationFailed(
+                        detail="Server authentication is misconfigured.",
+                        code="auth_server_error",
+                    )
+                jwks_url = _get_jwks_url(supabase_url)
+                jwk_client = _get_jwk_client(jwks_url)
+                signing_key = jwk_client.get_signing_key_from_jwt(token).key
+                payload = jwt.decode(
+                    token,
+                    signing_key,
+                    algorithms=[alg],
+                    issuer=issuer if issuer else None,
+                    options=decode_options,
+                )
+            else:
+                # Legacy/symmetric signing (HS256) for self-hosted or older setups.
+                secret = getattr(settings, "SUPABASE_JWT_SECRET", "")
+                if not secret:
+                    logger.error("SUPABASE_JWT_SECRET is not configured.")
+                    raise AuthenticationFailed(
+                        detail="Server authentication is misconfigured.",
+                        code="auth_server_error",
+                    )
+                payload = jwt.decode(
+                    token,
+                    secret,
+                    algorithms=["HS256"],
+                    issuer=issuer if issuer else None,
+                    options=decode_options,
+                )
         except jwt.ExpiredSignatureError:
             raise AuthenticationFailed(
                 detail="Token has expired.",
@@ -192,6 +239,11 @@ class SupabaseJWTAuthentication(BaseAuthentication):
             raise AuthenticationFailed(
                 detail=f"Token is malformed: {exc}",
                 code="token_malformed",
+            )
+        except jwt.InvalidAlgorithmError as exc:
+            raise AuthenticationFailed(
+                detail=f"Token algorithm is invalid: {exc}",
+                code="token_invalid_alg",
             )
         except jwt.InvalidTokenError as exc:
             raise AuthenticationFailed(
