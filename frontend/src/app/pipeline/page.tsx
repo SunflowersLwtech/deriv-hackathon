@@ -1,163 +1,16 @@
 "use client";
 
-import { useState, useCallback } from "react";
 import AppShell from "@/components/layout/AppShell";
 import { cn } from "@/lib/utils";
-import { usePageState } from "@/hooks/usePageState";
-import api, {
-  type PipelineResponse,
-  type CustomEvent,
-  type PortfolioPosition,
-} from "@/lib/api";
-
-type StageStatus = "idle" | "running" | "done" | "error";
-
-interface StageState {
-  monitor: StageStatus;
-  analyst: StageStatus;
-  advisor: StageStatus;
-  sentinel: StageStatus;
-  content: StageStatus;
-}
-
-const DEMO_USER_ID = "d1000000-0000-0000-0000-000000000001";
-
-const DEMO_EVENTS: { label: string; event: CustomEvent }[] = [
-  { label: "BTC +5.2%", event: { instrument: "BTC/USD", price: 97500, change_pct: 5.2 } },
-  { label: "ETH -4.1%", event: { instrument: "ETH/USD", price: 3100, change_pct: -4.1 } },
-  { label: "V75 +2.3%", event: { instrument: "Volatility 75", price: 900000, change_pct: 2.3 } },
-  { label: "V100 -1.8%", event: { instrument: "Volatility 100", price: 1500000, change_pct: -1.8 } },
-];
-
-const DEMO_PORTFOLIO: PortfolioPosition[] = [
-  { instrument: "BTC/USD", direction: "long", size: 0.1, entry_price: 95000, pnl: 250.0 },
-  { instrument: "ETH/USD", direction: "long", size: 0.5, entry_price: 3200, pnl: -50.0 },
-  { instrument: "Volatility 75", direction: "long", size: 1.0, entry_price: 900000, pnl: 120.0 },
-  { instrument: "Volatility 100", direction: "short", size: 0.5, entry_price: 1500000, pnl: -35.0 },
-];
-
-const IDLE_STAGES: StageState = {
-  monitor: "idle", analyst: "idle", advisor: "idle", sentinel: "idle", content: "idle",
-};
+import {
+  usePipelineContext,
+  DEMO_EVENTS,
+  type StageStatus,
+} from "@/providers/PipelineProvider";
 
 export default function PipelinePage() {
-  const [stages, setStages] = usePageState<StageState>("pipeline:stages", { ...IDLE_STAGES });
-  const [result, setResult] = usePageState<PipelineResponse | null>("pipeline:result", null);
-  const [isRunning, setIsRunning] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = usePageState<"auto" | "manual">("pipeline:mode", "manual");
-
-  const resetState = useCallback(() => {
-    setStages({ ...IDLE_STAGES });
-    setResult(null);
-    setError(null);
-  }, [setStages, setResult]);
-
-  const runPipeline = useCallback(
-    async (customEvent?: CustomEvent) => {
-      resetState();
-      setIsRunning(true);
-
-      // Animate stages sequentially
-      setStages((s) => ({ ...s, monitor: "running" }));
-
-      try {
-        const response = await api.runPipeline({
-          custom_event: customEvent,
-          user_portfolio: DEMO_PORTFOLIO,
-          user_id: DEMO_USER_ID,
-        });
-
-        // Animate stage completion based on response
-        if (response.volatility_event) {
-          setStages((s) => ({ ...s, monitor: "done", analyst: "running" }));
-          await sleep(400);
-        } else {
-          setStages((s) => ({ ...s, monitor: "error" }));
-          setResult(response);
-          setIsRunning(false);
-          return;
-        }
-
-        if (response.analysis_report) {
-          setStages((s) => ({ ...s, analyst: "done", advisor: "running" }));
-          await sleep(400);
-        } else {
-          setStages((s) => ({ ...s, analyst: "error" }));
-        }
-
-        if (response.personalized_insight) {
-          setStages((s) => ({ ...s, advisor: "done", sentinel: "running" }));
-          await sleep(400);
-        } else {
-          setStages((s) => ({ ...s, advisor: "error" }));
-        }
-
-        if (response.sentinel_insight) {
-          setStages((s) => ({ ...s, sentinel: "done", content: "running" }));
-          await sleep(500);
-        } else {
-          setStages((s) => ({ ...s, sentinel: response.sentinel_insight === null ? "done" : "error", content: "running" }));
-          await sleep(300);
-        }
-
-        if (response.market_commentary) {
-          setStages((s) => ({ ...s, content: "done" }));
-        } else {
-          setStages((s) => ({ ...s, content: "error" }));
-        }
-
-        setResult(response);
-  
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Pipeline failed");
-        setStages({ monitor: "error", analyst: "error", advisor: "error", sentinel: "error", content: "error" });
-      } finally {
-        setIsRunning(false);
-      }
-    },
-    [resetState]
-  );
-
-  const runAutoScan = useCallback(async () => {
-    resetState();
-    setIsRunning(true);
-    setStages((s) => ({ ...s, monitor: "running" }));
-
-    try {
-      const response = await api.runPipeline({
-        user_portfolio: DEMO_PORTFOLIO,
-        user_id: DEMO_USER_ID,
-      });
-
-      if (response.volatility_event) {
-        setStages((s) => ({ ...s, monitor: "done", analyst: "running" }));
-        await sleep(400);
-      }
-      if (response.analysis_report) {
-        setStages((s) => ({ ...s, analyst: "done", advisor: "running" }));
-        await sleep(400);
-      }
-      if (response.personalized_insight) {
-        setStages((s) => ({ ...s, advisor: "done", sentinel: "running" }));
-        await sleep(400);
-      }
-      if (response.sentinel_insight !== undefined) {
-        setStages((s) => ({ ...s, sentinel: "done", content: "running" }));
-        await sleep(400);
-      }
-      if (response.market_commentary) {
-        setStages((s) => ({ ...s, content: "done" }));
-      }
-
-      setResult(response);
-
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Auto scan failed");
-    } finally {
-      setIsRunning(false);
-    }
-  }, [resetState]);
+  const { stages, result, isRunning, error, mode, setMode, runPipeline, runAutoScan } =
+    usePipelineContext();
 
   return (
     <AppShell>
@@ -213,36 +66,11 @@ export default function PipelinePage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-5 gap-5">
-            <StageCard
-              title="1. MONITOR"
-              description="Detect volatility (Redis)"
-              status={stages.monitor}
-              icon="📡"
-            />
-            <StageCard
-              title="2. ANALYST"
-              description="Root cause analysis"
-              status={stages.analyst}
-              icon="🔍"
-            />
-            <StageCard
-              title="3. ADVISOR"
-              description="Portfolio interpretation"
-              status={stages.advisor}
-              icon="📊"
-            />
-            <StageCard
-              title="4. SENTINEL"
-              description="Behavior + market fusion"
-              status={stages.sentinel}
-              icon="🧠"
-            />
-            <StageCard
-              title="5. CONTENT"
-              description="Bluesky commentary"
-              status={stages.content}
-              icon="🦋"
-            />
+            <StageCard title="1. MONITOR" description="Detect volatility (Redis)" status={stages.monitor} icon="📡" />
+            <StageCard title="2. ANALYST" description="Root cause analysis" status={stages.analyst} icon="🔍" />
+            <StageCard title="3. ADVISOR" description="Portfolio interpretation" status={stages.advisor} icon="📊" />
+            <StageCard title="4. SENTINEL" description="Behavior + market fusion" status={stages.sentinel} icon="🧠" />
+            <StageCard title="5. CONTENT" description="Bluesky commentary" status={stages.content} icon="🦋" />
           </div>
 
           {/* Connector arrows (desktop only) */}
@@ -474,21 +302,26 @@ export default function PipelinePage() {
                 </div>
 
                 {result.sentinel_insight.user_stats_snapshot && (
-                  <div className="mt-4 pt-3 border-t border-border flex flex-wrap gap-4">
-                    <MiniStat
-                      label="Total Trades"
-                      value={String(result.sentinel_insight.user_stats_snapshot?.total_trades || 0)}
-                    />
-                    <MiniStat
-                      label="Win Rate"
-                      value={`${Number(result.sentinel_insight.user_stats_snapshot?.win_rate || 0).toFixed(1)}%`}
-                      color={Number(result.sentinel_insight.user_stats_snapshot?.win_rate || 0) >= 50 ? "text-profit" : "text-loss"}
-                    />
-                    <MiniStat
-                      label="Total P&L"
-                      value={`$${Number(result.sentinel_insight.user_stats_snapshot?.total_pnl || 0).toFixed(2)}`}
-                      color={Number(result.sentinel_insight.user_stats_snapshot?.total_pnl || 0) >= 0 ? "text-profit" : "text-loss"}
-                    />
+                  <div className="mt-4 pt-3 border-t border-border">
+                    <h4 className="text-[11px] text-muted-foreground uppercase tracking-wider mb-3 mono-data">
+                      TRADING STATS (LAST {result.sentinel_insight.user_stats_snapshot?.period_days || 30} DAYS)
+                    </h4>
+                    <div className="flex flex-wrap gap-4">
+                      <MiniStat
+                        label="Total Trades"
+                        value={String(result.sentinel_insight.user_stats_snapshot?.total_trades || 0)}
+                      />
+                      <MiniStat
+                        label="Win Rate"
+                        value={`${Number(result.sentinel_insight.user_stats_snapshot?.win_rate || 0).toFixed(1)}%`}
+                        color={Number(result.sentinel_insight.user_stats_snapshot?.win_rate || 0) >= 50 ? "text-profit" : "text-loss"}
+                      />
+                      <MiniStat
+                        label="Total P&L"
+                        value={`$${Number(result.sentinel_insight.user_stats_snapshot?.total_pnl || 0).toFixed(2)}`}
+                        color={Number(result.sentinel_insight.user_stats_snapshot?.total_pnl || 0) >= 0 ? "text-profit" : "text-loss"}
+                      />
+                    </div>
                   </div>
                 )}
               </ResultCard>
@@ -733,8 +566,4 @@ function PostPreview({
       </p>
     </div>
   );
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -244,13 +244,14 @@ def market_monitor_detect(
         events.sort(key=lambda e: abs(e.price_change_pct), reverse=True)
         return events[0]
 
-    # Fallback: no instrument exceeded its threshold, but we still want
-    # the pipeline to run in auto-scan mode. Pick the largest mover and
-    # flag it as a low-magnitude observation so the rest of the pipeline
-    # can still produce useful analysis.
+    # Fallback: no instrument exceeded its threshold. Pick the largest
+    # mover, but only if its change is non-trivial (>= 0.1%). Otherwise
+    # the pipeline would analyze a non-event with a "medium" tag.
     if all_scanned:
         all_scanned.sort(key=lambda e: abs(e.price_change_pct), reverse=True)
         best = all_scanned[0]
+        if abs(best.price_change_pct) < 0.1:
+            return None  # market is flat — nothing to analyze
         best.magnitude = "medium"
         best.raw_data["source"] = "auto_fallback"
         return best
@@ -359,12 +360,16 @@ Output a JSON object:
 def portfolio_advisor_interpret(
     report: AnalysisReport,
     user_portfolio: Optional[List[Dict[str, Any]]] = None,
+    event_price: Optional[float] = None,
 ) -> PersonalizedInsight:
     """
     Agent 3 – Portfolio Advisor.
 
     Takes an AnalysisReport + user portfolio and produces a
     PersonalizedInsight with impact assessment and educational suggestions.
+
+    If *event_price* is provided, each affected position's P&L is
+    recalculated dynamically so the LLM never sees stale demo values.
     """
     # Default demo portfolio if none provided
     if not user_portfolio:
@@ -380,6 +385,16 @@ def portfolio_advisor_interpret(
         if p.get("instrument", "").upper() == report.instrument.upper()
         or report.instrument.upper() in p.get("instrument", "").upper()
     ]
+
+    # Recalculate P&L for affected positions using real-time event price
+    if event_price:
+        for pos in affected:
+            entry = pos.get("entry_price")
+            if entry:
+                delta = event_price - entry
+                if pos.get("direction") == "short":
+                    delta = -delta
+                pos["pnl"] = round(delta * pos.get("size", 1), 2)
 
     portfolio_context = json.dumps(user_portfolio, indent=2)
     affected_context = json.dumps(affected, indent=2) if affected else "No directly affected positions."
@@ -438,18 +453,18 @@ tend to do in these situations, based on THEIR actual trading data.
 {MASTER_COMPLIANCE_RULES}
 
 Additional rules:
-- Reference the trader's specific patterns with data ("3 out of 5 times...")
+- Only reference numbers and stats that are explicitly provided in the prompt
 - Be warm but direct about behavioral risks
 - Never shame — frame as awareness
 - Connect the market event to the behavioral pattern explicitly
 - If no patterns are detected, provide encouraging feedback
+- Do NOT invent or fabricate statistics — only use data given to you
 
 Output a JSON object:
 {{
   "behavioral_context": "<summary of relevant behavioral patterns>",
   "risk_level": "high" | "medium" | "low",
-  "personalized_warning": "<the key message connecting market event + behavior>",
-  "historical_pattern_match": "<specific pattern with numbers>"
+  "personalized_warning": "<the key message connecting market event + behavior>"
 }}
 """
 
@@ -482,6 +497,28 @@ def behavioral_sentinel_analyze(
         patterns = {"patterns": {}, "summary": "No data available", "trade_count": 0}
         stats = {"total_trades": 0, "win_rate": 0}
 
+    # ── Pre-compute historical pattern match from real data ──
+    # Count how many times the user traded this instrument within 30 min
+    # of a >1% move in the last 30 days. This replaces LLM fabrication.
+    pre_computed_pattern = "Not enough historical data to identify a pattern."
+    try:
+        from behavior.tools import get_recent_trades
+        recent_trades_raw = get_recent_trades(demo_user_id, hours=30 * 24)
+        instrument_trades = [
+            t for t in recent_trades_raw
+            if t.get("instrument", "").upper() == event.instrument.upper()
+        ]
+        if len(instrument_trades) >= 2:
+            reactive_count = len(instrument_trades)
+            reactive_wins = sum(1 for t in instrument_trades if float(t.get("pnl", 0)) > 0)
+            reactive_wr = round(reactive_wins / reactive_count * 100, 1) if reactive_count else 0
+            pre_computed_pattern = (
+                f"You traded {event.instrument} {reactive_count} times in the last 30 days "
+                f"with a {reactive_wr}% win rate on those trades."
+            )
+    except Exception as exc:
+        print(f"[Sentinel] Pre-compute pattern error: {exc}")
+
     # Build the fusion prompt
     behavioral_summary = patterns.get("summary", "No patterns detected")
     pattern_details = []
@@ -503,20 +540,24 @@ def behavioral_sentinel_analyze(
 - Analysis: {report.event_summary}
 - Root Causes: {'; '.join(report.root_causes[:3])}
 
-USER'S BEHAVIORAL PROFILE (last 30 days):
-- Total trades: {stats.get('total_trades', 0)}
-- Win rate: {stats.get('win_rate', 0):.1f}%
-- Total P&L: ${stats.get('total_pnl', 0):.2f}
-- Best instrument: {stats.get('best_instrument', 'N/A')}
-- Worst instrument: {stats.get('worst_instrument', 'N/A')}
+USER'S BEHAVIORAL PROFILE (last {stats.get('period_days', 30)} days):
+- Total trades (last {stats.get('period_days', 30)} days): {stats.get('total_trades', 0)}
+- Win rate (last {stats.get('period_days', 30)} days): {stats.get('win_rate', 0):.1f}%
+- Total P&L (last {stats.get('period_days', 30)} days): ${stats.get('total_pnl', 0):.2f}
+- Best instrument (last {stats.get('period_days', 30)} days): {stats.get('best_instrument', 'N/A')}
+- Worst instrument (last {stats.get('period_days', 30)} days): {stats.get('worst_instrument', 'N/A')}
 
 RECENT BEHAVIORAL PATTERNS (7 days):
 {behavioral_summary}
 {pattern_context}
 
+PRE-COMPUTED HISTORICAL PATTERN (reference this, do NOT invent your own):
+{pre_computed_pattern}
+
 Given this market event and this trader's behavioral profile, generate a
 personalized behavioral warning. Connect the dots between what's happening
 in the market and what this trader tends to do in these situations.
+For the "historical_pattern_match" field, use the PRE-COMPUTED HISTORICAL PATTERN above verbatim.
 Return JSON only."""
 
     try:
@@ -538,10 +579,7 @@ Return JSON only."""
                 "personalized_warning",
                 f"Market event on {event.instrument}: check your recent patterns.",
             ),
-            historical_pattern_match=parsed.get(
-                "historical_pattern_match",
-                "Insufficient data for pattern matching.",
-            ),
+            historical_pattern_match=pre_computed_pattern,
             user_stats_snapshot=stats,
         )
     except Exception as exc:
@@ -555,7 +593,7 @@ Return JSON only."""
                 f"{event.instrument} moved {event.price_change_pct:+.2f}%. "
                 f"Review your trading patterns."
             ),
-            historical_pattern_match="Analysis unavailable.",
+            historical_pattern_match=pre_computed_pattern,
             user_stats_snapshot=stats,
         )
 
@@ -728,7 +766,7 @@ def run_pipeline(
 
     # ── Stage 3: Portfolio Advisor ──
     try:
-        insight = portfolio_advisor_interpret(report, user_portfolio)
+        insight = portfolio_advisor_interpret(report, user_portfolio, event_price=event.current_price)
         result.personalized_insight = asdict(insight)
     except Exception as exc:
         result.status = "partial"

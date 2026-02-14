@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import QueryProvider from "@/providers/QueryProvider";
 import ChatProvider from "@/providers/ChatProvider";
+import PipelineProvider from "@/providers/PipelineProvider";
 import "@/lib/pageCache";
 import "./globals.css";
 
@@ -36,7 +37,9 @@ export default function RootLayout({
       <body className="antialiased">
         <QueryProvider>
           <ChatProvider>
-            {children}
+            <PipelineProvider>
+              {children}
+            </PipelineProvider>
           </ChatProvider>
         </QueryProvider>
       </body>

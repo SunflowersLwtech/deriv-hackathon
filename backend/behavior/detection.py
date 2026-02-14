@@ -66,11 +66,15 @@ def detect_revenge_trading(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
                 severity = 'low'
             
             time_span = (rapid_trades[-1]['opened_at'] - rapid_trades[0]['opened_at']).total_seconds() / 60
-            
+            trigger_time = first_trade['opened_at'].strftime("%b %d, %H:%M UTC")
+
             return {
                 'detected': True,
                 'severity': severity,
-                'details': f"{len(rapid_trades)} trades in {time_span:.1f} minutes after a ${abs(float(first_trade['pnl'])):.2f} loss",
+                'details': (
+                    f"{len(rapid_trades)} trades in {time_span:.1f} min after a "
+                    f"${abs(float(first_trade['pnl'])):.2f} loss ({trigger_time})"
+                ),
                 'trade_count': len(rapid_trades),
                 'time_window': f"{time_span:.1f} minutes",
                 'total_pnl': total_pnl,
@@ -177,7 +181,17 @@ def detect_loss_chasing(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
     max_size_increase = 0
     last_size = None
     first_loss_size = None
-    
+    last_loss_size = None
+    # Track dates/sizes of the worst sequence for the details string
+    best_first_date = None
+    best_last_date = None
+    best_first_size = None
+    best_last_size = None
+    cur_first_date = None
+    cur_last_date = None
+    cur_first_size = None
+    cur_last_size = None
+
     for trade in sorted_trades:
         pnl = float(trade.get('pnl', 0))
 
@@ -185,35 +199,52 @@ def detect_loss_chasing(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
         # Using abs(pnl) is a more stable proxy than inferring from entry/exit
         # deltas, which can mask size escalation when the price move also grows.
         size = abs(pnl)
-        
+
         # Check if this is a loss
         if pnl < 0:
             current_consecutive += 1
-            
+
             if first_loss_size is None:
                 first_loss_size = size
-            
+                cur_first_date = trade['opened_at']
+                cur_first_size = size
+
+            cur_last_date = trade['opened_at']
+            cur_last_size = size
+
             # Check if size is increasing
             if last_size is not None and size > last_size:
                 size_increase = ((size - first_loss_size) / first_loss_size) * 100 if first_loss_size > 0 else 0
                 max_size_increase = max(max_size_increase, size_increase)
-            
+
             last_size = size
         else:
-            # Reset on win
+            # Reset on win — save best sequence info first
             if current_consecutive > max_consecutive:
                 max_consecutive = current_consecutive
+                best_first_date = cur_first_date
+                best_last_date = cur_last_date
+                best_first_size = cur_first_size
+                best_last_size = cur_last_size
             current_consecutive = 0
             first_loss_size = None
             last_size = None
-    
+            cur_first_date = None
+            cur_last_date = None
+            cur_first_size = None
+            cur_last_size = None
+
     # Check final sequence
     if current_consecutive > max_consecutive:
         max_consecutive = current_consecutive
-    
+        best_first_date = cur_first_date
+        best_last_date = cur_last_date
+        best_first_size = cur_first_size
+        best_last_size = cur_last_size
+
     # Detection criteria: 2+ consecutive losses with 20%+ size increase
     detected = max_consecutive >= 2 and max_size_increase >= 20
-    
+
     if not detected:
         return {
             'detected': False,
@@ -222,7 +253,7 @@ def detect_loss_chasing(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
             'consecutive_losses': max_consecutive,
             'size_increase': max_size_increase
         }
-    
+
     # Determine severity
     if max_consecutive >= 4 or max_size_increase >= 50:
         severity = 'high'
@@ -230,11 +261,24 @@ def detect_loss_chasing(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
         severity = 'medium'
     else:
         severity = 'low'
-    
+
+    # Build a details string with dates and sizes
+    date_range = ""
+    size_range = ""
+    if best_first_date and best_last_date:
+        d1 = best_first_date.strftime("%b %d")
+        d2 = best_last_date.strftime("%b %d")
+        date_range = f", {d1}-{d2}" if d1 != d2 else f", {d1}"
+    if best_first_size is not None and best_last_size is not None:
+        size_range = f" (${best_first_size:.2f} -> ${best_last_size:.2f})"
+
     return {
         'detected': True,
         'severity': severity,
-        'details': f"{max_consecutive} consecutive losses with {max_size_increase:.1f}% position size increase",
+        'details': (
+            f"{max_consecutive} consecutive losses with {max_size_increase:.1f}% "
+            f"position size increase{size_range}{date_range}"
+        ),
         'consecutive_losses': max_consecutive,
         'size_increase': max_size_increase
     }
