@@ -15,9 +15,10 @@ const INSTRUMENTS = [
   "Volatility 75 Index",
   "Volatility 50 Index",
   "Volatility 25 Index",
+  "BTC/USD",
+  "ETH/USD",
   "EUR/USD",
   "GBP/USD",
-  "BTC/USD",
 ];
 
 export default function TradingPage() {

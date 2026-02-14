@@ -22,13 +22,14 @@ const MarketOverview = dynamic(() => import("@/components/market/MarketOverview"
 });
 
 const INSTRUMENT_ICONS: Record<string, string> = {
-  "EUR/USD": "💶",
-  "GBP/USD": "💷",
-  "USD/JPY": "💴",
   "BTC/USD": "₿",
   "ETH/USD": "Ξ",
   "Volatility 75": "📊",
   "Volatility 100": "📈",
+  "Volatility 10": "📉",
+  "EUR/USD": "💶",
+  "GBP/USD": "💷",
+  "USD/JPY": "💴",
   GOLD: "🥇",
 };
 

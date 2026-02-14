@@ -74,6 +74,22 @@ class TradeViewSet(viewsets.ModelViewSet):
         except Exception as e:
             print(f"Error in behavioral analysis: {e}")
             # Don't fail the trade creation if analysis fails
+
+        # Trigger live narrator
+        try:
+            from behavior.narrator import narrate_trade_event
+            narrate_trade_event(
+                user_id=str(trade.user_id),
+                trade_data={
+                    "instrument": trade.instrument,
+                    "direction": trade.direction,
+                    "entry_price": str(trade.entry_price) if trade.entry_price else None,
+                    "pnl": str(trade.pnl) if trade.pnl else None,
+                },
+                event_type="new_trade",
+            )
+        except Exception:
+            pass  # Narrator failure must not block trade creation
         
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
@@ -387,7 +403,7 @@ class BehavioralMetricViewSet(viewsets.ModelViewSet):
             defaults={
                 'name': 'Demo Trader',
                 'preferences': {'demo_mode': True},
-                'watchlist': ['EUR/USD', 'BTC/USD', 'GOLD']
+                'watchlist': ['BTC/USD', 'ETH/USD', 'Volatility 75']
             }
         )
         
@@ -401,6 +417,25 @@ class BehavioralMetricViewSet(viewsets.ModelViewSet):
 
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
+from dataclasses import asdict
+
+
+class TradingTwinView(APIView):
+    """
+    POST /api/behavior/trading-twin/
+    Generate user's Trading Twin analysis.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        from behavior.trading_twin import generate_trading_twin
+
+        user_id = request.data.get("user_id", DEMO_USER_ID)
+        days = int(request.data.get("days", 30))
+        starting_equity = float(request.data.get("starting_equity", 10000))
+
+        result = generate_trading_twin(user_id, days, starting_equity)
+        return Response(asdict(result))
 
 
 class DerivPortfolioView(APIView):

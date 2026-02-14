@@ -24,11 +24,11 @@ BUILTIN_SCENARIOS = {
         "expected_detection": "revenge_trading",
         "expected_nudge": "You appear to be revenge trading after losses. Consider stepping away.",
         "trade_sequence": [
-            {"instrument": "EUR/USD", "direction": "buy", "entry_price": 1.0850, "exit_price": 1.0830, "pnl": -200, "minutes_offset": 0, "duration_seconds": 300},
-            {"instrument": "EUR/USD", "direction": "sell", "entry_price": 1.0835, "exit_price": 1.0855, "pnl": -150, "minutes_offset": 2, "duration_seconds": 180},
-            {"instrument": "EUR/USD", "direction": "buy", "entry_price": 1.0860, "exit_price": 1.0842, "pnl": -180, "minutes_offset": 4, "duration_seconds": 120},
-            {"instrument": "EUR/USD", "direction": "sell", "entry_price": 1.0840, "exit_price": 1.0860, "pnl": -120, "minutes_offset": 6, "duration_seconds": 90},
-            {"instrument": "EUR/USD", "direction": "buy", "entry_price": 1.0865, "exit_price": 1.0855, "pnl": -100, "minutes_offset": 7, "duration_seconds": 60},
+            {"instrument": "BTC/USD", "direction": "buy", "entry_price": 97500, "exit_price": 97300, "pnl": -200, "minutes_offset": 0, "duration_seconds": 300},
+            {"instrument": "BTC/USD", "direction": "sell", "entry_price": 97350, "exit_price": 97500, "pnl": -150, "minutes_offset": 2, "duration_seconds": 180},
+            {"instrument": "BTC/USD", "direction": "buy", "entry_price": 97600, "exit_price": 97420, "pnl": -180, "minutes_offset": 4, "duration_seconds": 120},
+            {"instrument": "BTC/USD", "direction": "sell", "entry_price": 97400, "exit_price": 97520, "pnl": -120, "minutes_offset": 6, "duration_seconds": 90},
+            {"instrument": "BTC/USD", "direction": "buy", "entry_price": 97550, "exit_price": 97450, "pnl": -100, "minutes_offset": 7, "duration_seconds": 60},
         ],
     },
     "overtrading": {
@@ -36,7 +36,7 @@ BUILTIN_SCENARIOS = {
         "expected_detection": "overtrading",
         "expected_nudge": "You've placed many trades in a short period. Consider slowing down.",
         "trade_sequence": [
-            {"instrument": "EUR/USD", "direction": "buy" if i % 2 == 0 else "sell", "entry_price": 1.0850, "exit_price": 1.0850 + ((-1) ** (i % 3)) * 0.001, "pnl": (-1) ** (i % 3) * 50, "minutes_offset": i * 2, "duration_seconds": 60}
+            {"instrument": "Volatility 75", "direction": "buy" if i % 2 == 0 else "sell", "entry_price": 900000, "exit_price": 900000 + ((-1) ** (i % 3)) * 500, "pnl": (-1) ** (i % 3) * 50, "minutes_offset": i * 2, "duration_seconds": 60}
             for i in range(15)
         ],
     },
@@ -45,10 +45,10 @@ BUILTIN_SCENARIOS = {
         "expected_detection": "loss_chasing",
         "expected_nudge": "You are increasing trade sizes after losses. This is a common pattern to watch.",
         "trade_sequence": [
-            {"instrument": "BTC/USD", "direction": "buy", "entry_price": 65000, "exit_price": 64900, "pnl": -100, "minutes_offset": 0, "duration_seconds": 600},
-            {"instrument": "BTC/USD", "direction": "buy", "entry_price": 64800, "exit_price": 64650, "pnl": -150, "minutes_offset": 15, "duration_seconds": 600},
-            {"instrument": "BTC/USD", "direction": "buy", "entry_price": 64500, "exit_price": 64250, "pnl": -250, "minutes_offset": 30, "duration_seconds": 600},
-            {"instrument": "BTC/USD", "direction": "buy", "entry_price": 64100, "exit_price": 63750, "pnl": -350, "minutes_offset": 45, "duration_seconds": 600},
+            {"instrument": "BTC/USD", "direction": "buy", "entry_price": 97000, "exit_price": 96900, "pnl": -100, "minutes_offset": 0, "duration_seconds": 600},
+            {"instrument": "BTC/USD", "direction": "buy", "entry_price": 96800, "exit_price": 96650, "pnl": -150, "minutes_offset": 15, "duration_seconds": 600},
+            {"instrument": "BTC/USD", "direction": "buy", "entry_price": 96500, "exit_price": 96250, "pnl": -250, "minutes_offset": 30, "duration_seconds": 600},
+            {"instrument": "BTC/USD", "direction": "buy", "entry_price": 96100, "exit_price": 95750, "pnl": -350, "minutes_offset": 45, "duration_seconds": 600},
         ],
     },
     "healthy_session": {
@@ -56,11 +56,11 @@ BUILTIN_SCENARIOS = {
         "expected_detection": "none",
         "expected_nudge": "Your trading session looks well-paced. Keep it up!",
         "trade_sequence": [
-            {"instrument": "EUR/USD", "direction": "buy", "entry_price": 1.0850, "exit_price": 1.0935, "pnl": 85, "minutes_offset": 0, "duration_seconds": 3600},
-            {"instrument": "GBP/USD", "direction": "sell", "entry_price": 1.2700, "exit_price": 1.2740, "pnl": -40, "minutes_offset": 60, "duration_seconds": 3600},
-            {"instrument": "EUR/USD", "direction": "buy", "entry_price": 1.0840, "exit_price": 1.0960, "pnl": 120, "minutes_offset": 150, "duration_seconds": 3600},
-            {"instrument": "BTC/USD", "direction": "buy", "entry_price": 65000, "exit_price": 65060, "pnl": 60, "minutes_offset": 240, "duration_seconds": 3600},
-            {"instrument": "GOLD", "direction": "sell", "entry_price": 2350, "exit_price": 2353, "pnl": -30, "minutes_offset": 300, "duration_seconds": 3600},
+            {"instrument": "BTC/USD", "direction": "buy", "entry_price": 97000, "exit_price": 97085, "pnl": 85, "minutes_offset": 0, "duration_seconds": 3600},
+            {"instrument": "ETH/USD", "direction": "sell", "entry_price": 3100, "exit_price": 3140, "pnl": -40, "minutes_offset": 60, "duration_seconds": 3600},
+            {"instrument": "Volatility 75", "direction": "buy", "entry_price": 900000, "exit_price": 900120, "pnl": 120, "minutes_offset": 150, "duration_seconds": 3600},
+            {"instrument": "ETH/USD", "direction": "buy", "entry_price": 3050, "exit_price": 3110, "pnl": 60, "minutes_offset": 240, "duration_seconds": 3600},
+            {"instrument": "BTC/USD", "direction": "sell", "entry_price": 97200, "exit_price": 97230, "pnl": -30, "minutes_offset": 300, "duration_seconds": 3600},
         ],
     },
 }
@@ -459,6 +459,50 @@ class WowMomentView(APIView):
         return Response(results)
 
 
+# ─── Demo Trigger & Health ─────────────────────────────────────────
+
+
+class DemoTriggerEventView(APIView):
+    """
+    POST /api/demo/trigger-event/
+    Manually trigger a simulated market event to activate the MarketMonitor push chain.
+    Used when real markets are calm during demo.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        instrument = request.data.get("instrument", "BTC/USD")
+        change_pct = float(request.data.get("change_pct", -3.2))
+        price = float(request.data.get("price", 95000))
+
+        from market.monitor import get_monitor
+        monitor = get_monitor()
+        monitor._handle_volatility_event(
+            instrument=instrument,
+            current_price=price,
+            previous_price=price * (1 - change_pct / 100),
+            change_pct=change_pct,
+        )
+        return Response({
+            "status": "triggered",
+            "instrument": instrument,
+            "change_pct": change_pct,
+            "message": "Market event simulated. Pipeline running, WebSocket push pending.",
+        })
+
+
+class DemoHealthView(APIView):
+    """
+    GET /api/demo/health/
+    Check all demo dependencies are ready before presentation.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from demo.health import check_demo_readiness
+        return Response(check_demo_readiness())
+
+
 # ─── Demo Script Views ──────────────────────────────────────────────
 
 class DemoScriptListView(APIView):
@@ -551,6 +595,86 @@ class DemoRunScriptView(APIView):
             "script_name": script_name,
             "opening_line": script.opening_line,
             "closing_line": script.closing_line,
+            "status": "partial" if has_errors else "success",
+            "steps": results,
+            "total_duration_ms": total_ms,
+        })
+
+
+class DemoRunScriptV2View(APIView):
+    """
+    POST /api/demo/run-script-v2/
+    {"script_name": "championship_run"}
+
+    Executes V2 demo script with fallback support.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        import time
+        import requests as http_requests
+        from demo.demo_script_v2 import get_script_v2
+        from demo.fallback import execute_with_fallback
+
+        script_name = request.data.get("script_name", "championship_run")
+        script = get_script_v2(script_name)
+        if not script:
+            return Response({"error": f"Script '{script_name}' not found"}, status=404)
+
+        host = request.get_host()
+        scheme = "https" if request.is_secure() else "http"
+        base_url = f"{scheme}://{host}"
+
+        results = []
+        total_start = time.time()
+
+        for step in script.steps:
+            step_start = time.time()
+            step_result = {
+                "step_number": step.step_number,
+                "title": step.title,
+                "narration": step.narration,
+                "wow_factor": step.wow_factor,
+                "act": step.act,
+                "visual_cue": step.visual_cue,
+                "status": "success",
+                "result": {},
+                "duration_ms": 0,
+            }
+
+            if step.api_endpoint == "NONE":
+                step_result["result"] = {"message": "Closing narration — no API call"}
+            else:
+                try:
+                    url = f"{base_url}{step.api_endpoint}"
+                    if step.api_params:
+                        resp = http_requests.post(
+                            url,
+                            json=step.api_params,
+                            timeout=30,
+                            headers={"Content-Type": "application/json"},
+                        )
+                    else:
+                        resp = http_requests.get(url, timeout=30)
+
+                    step_result["result"] = resp.json() if resp.status_code == 200 else {"error": resp.text[:200]}
+                    step_result["status"] = "success" if resp.status_code == 200 else "error"
+                except Exception as exc:
+                    step_result["status"] = "error"
+                    step_result["result"] = {"error": str(exc)}
+                    step_result["fallback_used"] = step.fallback
+
+            step_result["duration_ms"] = int((time.time() - step_start) * 1000)
+            results.append(step_result)
+
+        total_ms = int((time.time() - total_start) * 1000)
+        has_errors = any(r["status"] == "error" for r in results)
+
+        return Response({
+            "script_name": script_name,
+            "version": "v2",
+            "opening_narration": script.opening_narration,
+            "closing_narration": script.closing_narration,
             "status": "partial" if has_errors else "success",
             "steps": results,
             "total_duration_ms": total_ms,

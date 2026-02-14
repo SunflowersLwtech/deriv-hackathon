@@ -483,6 +483,52 @@ class ApiClient {
     });
   }
 
+  // ─── Trading Twin endpoint ──────────────────────────────────────────
+
+  async getTradingTwin(userId?: string, days = 30, startingEquity = 10000) {
+    return this.request<TradingTwinResult>("/behavior/trading-twin/", {
+      method: "POST",
+      body: { user_id: userId, days, starting_equity: startingEquity },
+      timeoutMs: TIMEOUT_LLM,
+    });
+  }
+
+  // ─── Multi-Persona Content endpoint ────────────────────────────────
+
+  async getMultiPersonaContent(event: Record<string, unknown>) {
+    return this.request<MultiPersonaContentResult>("/content/multi-persona/", {
+      method: "POST",
+      body: { event },
+      timeoutMs: TIMEOUT_LLM,
+    });
+  }
+
+  // ─── Demo trigger + health endpoints ───────────────────────────────
+
+  async triggerDemoEvent(instrument = "BTC/USD", changePct = -3.2) {
+    return this.request<{ status: string; instrument: string; change_pct: number; message: string }>(
+      "/demo/trigger-event/",
+      {
+        method: "POST",
+        body: { instrument, change_pct: changePct },
+      }
+    );
+  }
+
+  async getDemoHealth() {
+    return this.request<{ ready: boolean; checks: Record<string, unknown>; warnings: string[] }>(
+      "/demo/health/"
+    );
+  }
+
+  async runDemoScriptV2(name = "championship_run") {
+    return this.request<DemoRunResult>("/demo/run-script-v2/", {
+      method: "POST",
+      body: { script_name: name },
+      timeoutMs: TIMEOUT_PIPELINE,
+    });
+  }
+
   // ─── Demo script endpoints ────────────────────────────────────────
   async getDemoScripts() {
     return this.request<DemoScriptsResponse>("/demo/scripts/");
@@ -1031,6 +1077,45 @@ export interface WowMomentResponse {
     total_found: number;
   } | string;
   disclaimer: string;
+}
+
+// ─── Trading Twin types ─────────────────────────────────────────────
+
+export interface TwinPoint {
+  timestamp: string;
+  impulsive_equity: number;
+  disciplined_equity: number;
+  trade_id?: string;
+  is_impulsive: boolean;
+  pattern?: string;
+}
+
+export interface TradingTwinResult {
+  equity_curve: TwinPoint[];
+  impulsive_final_equity: number;
+  disciplined_final_equity: number;
+  equity_difference: number;
+  equity_difference_pct: number;
+  total_trades: number;
+  impulsive_trades: number;
+  disciplined_trades: number;
+  impulsive_loss: number;
+  disciplined_gain: number;
+  pattern_breakdown: Record<string, number>;
+  narrative: string;
+  key_insight: string;
+  analysis_period_days: number;
+  generated_at: string;
+}
+
+// ─── Multi-Persona Content types ────────────────────────────────────
+
+export interface MultiPersonaContentResult {
+  event_summary: string;
+  calm_analyst_post: string;
+  data_nerd_post: string;
+  trading_coach_post: string;
+  generated_at: string;
 }
 
 // ─── Copy Trading types ─────────────────────────────────────────────

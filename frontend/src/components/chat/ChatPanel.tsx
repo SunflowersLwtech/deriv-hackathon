@@ -3,24 +3,20 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import ChatMessage from "./ChatMessage";
-import LoadingDots from "@/components/ui/LoadingDots";
-import type { ChatMessage as ChatMessageType } from "@/lib/api";
-import api from "@/lib/api";
-
-const WELCOME_MESSAGE: ChatMessageType = {
-  role: "assistant",
-  content:
-    "Welcome to TradeIQ. I'm your AI trading analyst. I can help you with:\n\n• Market analysis and insights\n• Technical indicator explanations\n• Behavioral pattern feedback\n• Content generation for social media\n\nWhat would you like to explore?",
-  timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }),
-  type: "normal",
-};
+import ThinkingProcess from "@/components/ai/ThinkingProcess";
+import { useStreamingChat } from "@/hooks/useStreamingChat";
 
 export default function ChatPanel() {
-  const [messages, setMessages] = useState<ChatMessageType[]>([WELCOME_MESSAGE]);
+  const {
+    messages,
+    streamingMessage,
+    streamStatus,
+    currentToolCall,
+    sendMessage,
+  } = useStreamingChat();
+
   const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -28,51 +24,12 @@ export default function ChatPanel() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, scrollToBottom]);
+  }, [messages, streamingMessage, scrollToBottom]);
 
-  const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
-
-    const userMessage: ChatMessageType = {
-      role: "user",
-      content: input.trim(),
-      timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
+  const handleSend = () => {
+    if (!input.trim() || streamStatus !== "idle") return;
+    sendMessage(input.trim());
     setInput("");
-    setIsLoading(true);
-
-    try {
-      // Build conversation history for context
-      const history = messages
-        .filter((m) => m.role === "user" || (m.role === "assistant" && m.type === "normal"))
-        .slice(-6)
-        .map((m) => ({ role: m.role, content: m.content }));
-
-      const response = await api.chatWithHistory(input.trim(), "auto", history);
-
-      // Backend returns { message, agent_type, tools_used, source }
-      const replyText = response.message || response.reply || "I couldn't generate a response.";
-
-      const aiMessage: ChatMessageType = {
-        role: "assistant",
-        content: replyText,
-        timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }),
-        type: "normal",
-      };
-      setMessages((prev) => [...prev, aiMessage]);
-    } catch {
-      const errorMessage: ChatMessageType = {
-        role: "assistant",
-        content: "I'm having trouble connecting to the analysis engine. Please try again in a moment.",
-        timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }),
-        type: "normal",
-      };
-      setMessages((prev) => [...prev, errorMessage]);
-    } finally {
-      setIsLoading(false);
-    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -81,6 +38,8 @@ export default function ChatPanel() {
       handleSend();
     }
   };
+
+  const isProcessing = streamStatus !== "idle";
 
   return (
     <div className="flex flex-col h-full">
@@ -92,20 +51,13 @@ export default function ChatPanel() {
           ))}
         </div>
 
-        {isLoading && (
-          <div className="px-4 py-4 bg-surface/50">
-            <div className="flex items-center gap-2.5 mb-2">
-              <div className="w-6 h-6 rounded-md bg-profit/20 flex items-center justify-center">
-                <span className="text-[10px] text-profit mono-data font-bold">AI</span>
-              </div>
-              <span className="text-xs font-semibold tracking-wider mono-data text-profit">
-                TRADEIQ
-              </span>
-            </div>
-            <div className="pl-8">
-              <LoadingDots />
-            </div>
-          </div>
+        {/* Live streaming / thinking */}
+        {isProcessing && (
+          <ThinkingProcess
+            status={streamStatus}
+            toolCall={currentToolCall}
+            streamingText={streamingMessage}
+          />
         )}
 
         <div ref={messagesEndRef} />
@@ -115,7 +67,6 @@ export default function ChatPanel() {
       <div className="border-t border-border p-4 shrink-0">
         <div className="flex gap-2.5">
           <textarea
-            ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -130,11 +81,11 @@ export default function ChatPanel() {
           />
           <button
             onClick={handleSend}
-            disabled={!input.trim() || isLoading}
+            disabled={!input.trim() || isProcessing}
             className={cn(
               "px-4 py-2.5 rounded-md text-xs font-semibold tracking-wider mono-data",
               "transition-all duration-200",
-              input.trim() && !isLoading
+              input.trim() && !isProcessing
                 ? "bg-white text-black hover:bg-gray-200"
                 : "bg-border text-muted-foreground cursor-not-allowed"
             )}
@@ -143,7 +94,7 @@ export default function ChatPanel() {
           </button>
         </div>
         <p className="text-[10px] text-muted-foreground/50 mt-2 mono-data text-center">
-          ⚠ AI analysis only. Not financial advice. DYOR.
+          AI analysis only. Not financial advice. DYOR.
         </p>
       </div>
     </div>

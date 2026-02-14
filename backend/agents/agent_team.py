@@ -149,8 +149,8 @@ class PipelineResult:
 # ─── Agent 1: Market Monitor ─────────────────────────────────────────
 
 MONITOR_INSTRUMENTS = [
-    "EUR/USD", "GBP/USD", "USD/JPY", "BTC/USD",
-    "ETH/USD", "GOLD", "Volatility 75",
+    "BTC/USD", "ETH/USD", "Volatility 75", "Volatility 100",
+    "EUR/USD", "GBP/USD", "GOLD",
 ]
 
 # Threshold (%) for volatility detection per asset class

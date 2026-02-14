@@ -160,6 +160,48 @@ class PublishToBlueskyView(APIView):
             }, status=500)
 
 
+class BlueskyCommunityView(APIView):
+    """Bluesky community interaction endpoint."""
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        """GET: Discover trending topics."""
+        from content.community import discover_trending_topics
+        topics = discover_trending_topics(limit=10)
+        return Response({"topics": topics})
+
+    def post(self, request):
+        """POST: Generate trend content or reply draft."""
+        action = request.data.get("action", "trend_content")
+        persona = request.data.get("persona", "calm_analyst")
+
+        if action == "trend_content":
+            from content.community import discover_trending_topics, generate_trend_content
+            topics = discover_trending_topics(limit=5)
+            result = generate_trend_content(topics, persona)
+            return Response(result)
+
+        elif action == "reply_draft":
+            from content.community import generate_reply_draft
+            original = request.data.get("original_post", {})
+            result = generate_reply_draft(original, persona)
+            return Response(result)
+
+        return Response({"error": "Unknown action"}, status=400)
+
+
+class MultiPersonaView(APIView):
+    """Multi-persona collaborative content endpoint."""
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        from content.multi_persona import generate_multi_persona_content
+        from dataclasses import asdict
+        event = request.data.get("event", {})
+        result = generate_multi_persona_content(event)
+        return Response(asdict(result))
+
+
 class BlueskySearchView(APIView):
     """
     GET /api/content/bluesky-search/?q=EUR+USD&limit=10

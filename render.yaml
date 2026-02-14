@@ -22,7 +22,7 @@ services:
       - key: ALLOWED_HOSTS
         value: "*"
       - key: CORS_ALLOWED_ORIGINS
-        value: "https://tradeiq-frontend-r3x8.onrender.com"
+        sync: false
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_JWT_SECRET
@@ -45,6 +45,9 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
+      # Real-time market monitor daemon
+      - key: RUN_MONITOR
+        value: "true"
 
   # ── Frontend: Next.js ──
   - type: web

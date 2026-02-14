@@ -24,15 +24,15 @@ const DEMO_USER_ID = "d1000000-0000-0000-0000-000000000001";
 const DEMO_EVENTS: { label: string; event: CustomEvent }[] = [
   { label: "BTC +5.2%", event: { instrument: "BTC/USD", price: 97500, change_pct: 5.2 } },
   { label: "ETH -4.1%", event: { instrument: "ETH/USD", price: 3100, change_pct: -4.1 } },
-  { label: "EUR/USD +0.8%", event: { instrument: "EUR/USD", price: 1.092, change_pct: 0.8 } },
-  { label: "GOLD +1.5%", event: { instrument: "GOLD", price: 2880, change_pct: 1.5 } },
+  { label: "V75 +2.3%", event: { instrument: "Volatility 75", price: 900000, change_pct: 2.3 } },
+  { label: "V100 -1.8%", event: { instrument: "Volatility 100", price: 1500000, change_pct: -1.8 } },
 ];
 
 const DEMO_PORTFOLIO: PortfolioPosition[] = [
-  { instrument: "EUR/USD", direction: "long", size: 1.0, entry_price: 1.083, pnl: 12.5 },
   { instrument: "BTC/USD", direction: "long", size: 0.1, entry_price: 95000, pnl: 250.0 },
-  { instrument: "GOLD", direction: "short", size: 0.5, entry_price: 2860, pnl: -15.0 },
   { instrument: "ETH/USD", direction: "long", size: 0.5, entry_price: 3200, pnl: -50.0 },
+  { instrument: "Volatility 75", direction: "long", size: 1.0, entry_price: 900000, pnl: 120.0 },
+  { instrument: "Volatility 100", direction: "short", size: 0.5, entry_price: 1500000, pnl: -35.0 },
 ];
 
 export default function PipelinePage() {

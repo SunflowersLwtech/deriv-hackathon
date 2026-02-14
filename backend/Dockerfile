@@ -53,4 +53,8 @@ EXPOSE 8000
 
 # Daphne for ASGI (supports HTTP + WebSocket)
 # Use $PORT for cloud platforms (Railway, Render) that inject PORT env var
-CMD ["sh", "-c", "python manage.py migrate --noinput && daphne -b 0.0.0.0 -p ${PORT:-8000} tradeiq.asgi:application"]
+# 1. Run migrations
+# 2. Seed demo data (idempotent — safe to run repeatedly)
+# 3. Warm demo cache in background (pre-computes Trading Twin, multi-persona)
+# 4. Start Daphne ASGI server
+CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py seed_demo --quiet 2>/dev/null || true && python manage.py warm_demo_cache 2>/dev/null & daphne -b 0.0.0.0 -p ${PORT:-8000} tradeiq.asgi:application"]

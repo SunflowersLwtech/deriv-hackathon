@@ -18,6 +18,28 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
+
+def _is_forex_market_closed() -> bool:
+    """Check if forex markets are currently closed (weekend).
+    Forex closes Friday ~22:00 UTC, reopens Sunday ~22:00 UTC."""
+    now = datetime.now(tz=timezone.utc)
+    weekday = now.weekday()  # 0=Monday, 6=Sunday
+    hour = now.hour
+    if weekday == 5:  # Saturday — always closed
+        return True
+    if weekday == 6 and hour < 22:  # Sunday before 22:00 UTC
+        return True
+    if weekday == 4 and hour >= 22:  # Friday after 22:00 UTC
+        return True
+    return False
+
+
+def _is_forex_instrument(instrument: str) -> bool:
+    """Check if an instrument is a forex/commodity that closes on weekends."""
+    deriv_symbol = _get_deriv_symbol(instrument)
+    return deriv_symbol.startswith("frx")
+
+
 # Gracefully handle missing Redis — cache is optional
 try:
     from .cache import get_cached_price, set_cached_price
@@ -163,6 +185,20 @@ def fetch_price_data(instrument: str) -> Dict[str, Any]:
     Returns:
         Dict with price, change, etc.
     """
+    # Weekend guard: forex/commodity markets are closed Fri 22:00 – Sun 22:00 UTC
+    if _is_forex_instrument(instrument) and _is_forex_market_closed():
+        return {
+            "instrument": instrument,
+            "price": None,
+            "error": (
+                f"{instrument} — Forex market is closed on weekends. "
+                "Displaying last session data. Live trading resumes Sunday 22:00 UTC."
+            ),
+            "market_closed": True,
+            "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+            "source": "deriv",
+        }
+
     # Check cache first (short 5s TTL for live prices — deduplicates the burst
     # of concurrent requests that fire when dashboard hooks mount at once.
     # This differs from cache.py's 300s default which is for longer-lived data.
@@ -277,6 +313,22 @@ def fetch_price_history(
     count: int = 120,
 ) -> Dict[str, Any]:
     """Fetch historical candles for charting and technical analysis."""
+    # Weekend guard for forex/commodity instruments
+    if _is_forex_instrument(instrument) and _is_forex_market_closed():
+        return {
+            "instrument": instrument,
+            "timeframe": timeframe,
+            "candles": [],
+            "change": 0.0,
+            "change_percent": 0.0,
+            "error": (
+                f"{instrument} — Forex market is closed on weekends. "
+                "Live data resumes Sunday 22:00 UTC."
+            ),
+            "market_closed": True,
+            "source": "deriv",
+        }
+
     granularity = TIMEFRAME_TO_GRANULARITY.get(timeframe, 3600)
     try:
         result = _run_async_in_new_thread(
@@ -784,10 +836,11 @@ def generate_market_brief(instruments: List[str] = None) -> Dict[str, Any]:
         instruments = list(dict.fromkeys(discovered))
 
     if not instruments:
-        # Fallback to popular instruments when DB has no watchlists/trades
+        # Fallback: prefer 24/7 instruments (crypto + synthetic indices)
+        # so the dashboard always has live data, even on weekends.
         instruments = [
-            "frxEURUSD", "frxGBPUSD", "frxUSDJPY",
-            "cryBTCUSD", "frxXAUUSD", "R_100",
+            "cryBTCUSD", "cryETHUSD", "R_100",
+            "R_75", "R_10", "frxEURUSD",
         ]
 
     # Fetch all instruments in parallel (preserving input order via executor.map)

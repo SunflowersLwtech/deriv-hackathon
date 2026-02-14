@@ -21,16 +21,16 @@ def load_demo_scenario(user_email='demo@tradeiq.com', scenario='revenge_trading'
     scenarios = {
         'revenge_trading': [
             # Initial loss triggers emotional trading
-            {'time': 0, 'pnl': -200, 'instrument': 'EUR/USD'},
+            {'time': 0, 'pnl': -200, 'instrument': 'BTC/USD'},
             # Rapid trades in next 10 minutes
-            {'time': 2, 'pnl': -150, 'instrument': 'EUR/USD'},
-            {'time': 4, 'pnl': -180, 'instrument': 'EUR/USD'},
-            {'time': 6, 'pnl': -120, 'instrument': 'EUR/USD'},
-            {'time': 7, 'pnl': -100, 'instrument': 'EUR/USD'},
+            {'time': 2, 'pnl': -150, 'instrument': 'BTC/USD'},
+            {'time': 4, 'pnl': -180, 'instrument': 'BTC/USD'},
+            {'time': 6, 'pnl': -120, 'instrument': 'BTC/USD'},
+            {'time': 7, 'pnl': -100, 'instrument': 'BTC/USD'},
         ],
         'overtrading': [
             # 25 trades in a day (way above 8 average)
-            {'time': i*15, 'pnl': (-1)**(i%3) * 50, 'instrument': 'EUR/USD'}
+            {'time': i*15, 'pnl': (-1)**(i%3) * 50, 'instrument': 'Volatility 75'}
             for i in range(25)
         ],
         'loss_chasing': [
@@ -42,11 +42,11 @@ def load_demo_scenario(user_email='demo@tradeiq.com', scenario='revenge_trading'
         ],
         'healthy_session': [
             # Well-paced trades with good discipline
-            {'time': 0, 'pnl': 85, 'instrument': 'EUR/USD'},
-            {'time': 60, 'pnl': -40, 'instrument': 'GBP/USD'},
-            {'time': 150, 'pnl': 120, 'instrument': 'EUR/USD'},
-            {'time': 240, 'pnl': 60, 'instrument': 'BTC/USD'},
-            {'time': 300, 'pnl': -30, 'instrument': 'GOLD'},
+            {'time': 0, 'pnl': 85, 'instrument': 'BTC/USD'},
+            {'time': 60, 'pnl': -40, 'instrument': 'ETH/USD'},
+            {'time': 150, 'pnl': 120, 'instrument': 'Volatility 75'},
+            {'time': 240, 'pnl': 60, 'instrument': 'ETH/USD'},
+            {'time': 300, 'pnl': -30, 'instrument': 'BTC/USD'},
         ]
     }
     

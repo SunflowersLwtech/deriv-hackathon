@@ -4,8 +4,11 @@ Uses DeepSeek-V3 with function calling support.
 Falls back to OpenRouter if DeepSeek API has insufficient balance.
 """
 import os
-from typing import List, Dict, Any, Optional
+import logging
+from typing import List, Dict, Any, Optional, Generator
 from openai import OpenAI
+
+logger = logging.getLogger("tradeiq.llm")
 
 
 class DeepSeekClient:
@@ -142,6 +145,40 @@ class DeepSeekClient:
         )
 
         return response.choices[0].message.content
+
+    def stream_chat(
+        self,
+        system_prompt: str,
+        user_message: str,
+        max_tokens: int = 1000,
+        temperature: float = 0.7,
+    ) -> Generator[str, None, None]:
+        """
+        Stream LLM response chunk by chunk.
+        Yields text fragments as they arrive.
+        """
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ]
+
+        params: Dict[str, Any] = {
+            "model": self.chat_model,
+            "messages": messages,
+            "temperature": temperature,
+            "stream": True,
+        }
+        if max_tokens:
+            params["max_tokens"] = max_tokens
+
+        try:
+            response = self.client.chat.completions.create(**params)
+            for chunk in response:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        except Exception as exc:
+            logger.error("Stream error: %s", exc)
+            yield f"[Error: {exc}]"
 
 
 # Global singleton instance

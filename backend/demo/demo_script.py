@@ -40,7 +40,7 @@ DEMO_SCRIPTS: Dict[str, DemoScript] = {
                 title="Market Monitor — Volatility Detection",
                 narration="Agent 1 scans 7 instruments via Deriv WebSocket API, comparing Redis-cached prices to detect real volatility events.",
                 api_endpoint="/api/agents/monitor/",
-                api_params={"instruments": ["BTC/USD", "EUR/USD", "Volatility 75"]},
+                api_params={"instruments": ["BTC/USD", "ETH/USD", "Volatility 75"]},
                 expected_duration_sec=8,
                 wow_factor="Real Deriv API price data, not mocked",
             ),
@@ -133,7 +133,7 @@ DEMO_SCRIPTS: Dict[str, DemoScript] = {
                 api_endpoint="/api/demo/wow-moment/",
                 api_params={
                     "user_id": "d1000000-0000-0000-0000-000000000001",
-                    "instrument": "EUR/USD",
+                    "instrument": "BTC/USD",
                 },
                 expected_duration_sec=15,
                 wow_factor="AI behavioral coaching with empathy",

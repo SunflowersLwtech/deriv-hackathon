@@ -93,10 +93,10 @@ export default function PnLChart({
             // getTrades failed (backend cold start, timeout, etc.) — fall through to price chart
           }
 
-          // No trades or getTrades failed → show EUR/USD price chart
+          // No trades or getTrades failed → show BTC/USD price chart (24/7 available)
           if (!hasTrades && !cancelled) {
             try {
-              const chartData = await fetchPriceChart("frxEURUSD", "1h");
+              const chartData = await fetchPriceChart("cryBTCUSD", "1h");
               if (!cancelled && chartData.length > 0) {
                 setData(chartData);
               }

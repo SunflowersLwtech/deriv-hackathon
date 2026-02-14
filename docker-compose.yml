@@ -16,6 +16,7 @@ services:
     environment:
       - DJANGO_SETTINGS_MODULE=tradeiq.settings
       - ALLOWED_HOSTS=*
+      - RUN_MONITOR=true
     restart: unless-stopped
     depends_on:
       redis:
