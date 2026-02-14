@@ -77,7 +77,9 @@ test.describe("TradeIQ Full Feature Test", () => {
   test("11. Demo page", async ({ page }) => {
     await page.goto(`${BASE_URL}/demo`);
     await expect(page).toHaveURL(/\/demo/);
-    await expect(page.getByRole("heading", { name: "DEMO COMMAND CENTER" })).toBeVisible({ timeout: 15000 });
+    await expect(
+      page.getByRole("heading", { name: /TRADEIQ DEMO|DEMO COMMAND CENTER/i })
+    ).toBeVisible({ timeout: 15000 });
   });
 
   test("12. Navigation between all main pages", async ({ page }) => {

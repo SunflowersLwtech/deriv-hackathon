@@ -5,7 +5,7 @@ import json
 import asyncio
 import websockets
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone as dt_timezone
 from decimal import Decimal
 from django.utils import timezone
 from django.conf import settings
@@ -222,10 +222,10 @@ class DerivClient:
         duration_seconds = None
         
         if purchase_time:
-            opened_at = datetime.fromtimestamp(purchase_time, tz=timezone.utc)
+            opened_at = datetime.fromtimestamp(purchase_time, tz=dt_timezone.utc)
         
         if sell_time:
-            closed_at = datetime.fromtimestamp(sell_time, tz=timezone.utc)
+            closed_at = datetime.fromtimestamp(sell_time, tz=dt_timezone.utc)
         
         if purchase_time and sell_time:
             duration_seconds = sell_time - purchase_time

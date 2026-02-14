@@ -45,7 +45,8 @@ class UserProfileViewSet(viewsets.ModelViewSet):
 class TradeViewSet(viewsets.ModelViewSet):
     queryset = Trade.objects.all()
     serializer_class = TradeSerializer
-    permission_classes = [AllowAny]  # Demo mode - allow all access
+    # Keep reads public while requiring auth for writes.
+    permission_classes = [IsAuthenticatedOrReadOnly]
     
     def get_queryset(self):
         """Filter trades by user if user_id provided."""
