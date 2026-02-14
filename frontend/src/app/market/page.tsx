@@ -23,12 +23,12 @@ import { useInstrumentUniverse, useEconomicCalendar, useTopHeadlines } from "@/h
 import { hasTradingViewSymbol } from "@/components/market/TradingViewWidget";
 
 const PnLChart = dynamic(() => import("@/components/market/PnLChart"), {
-  loading: () => <div className="bg-card border border-border rounded-md p-6 h-[400px] animate-shimmer" />,
+  loading: () => <div className="bg-card border border-border rounded-md p-6 h-full animate-shimmer" />,
   ssr: false,
 });
 
 const TradingViewWidget = dynamic(() => import("@/components/market/TradingViewWidget"), {
-  loading: () => <div className="bg-card border border-border rounded-md p-6 h-[400px] animate-shimmer" />,
+  loading: () => <div className="bg-card border border-border rounded-md p-6 h-full animate-shimmer" />,
   ssr: false,
 });
 
@@ -199,17 +199,18 @@ export default function MarketPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left: Chart + Timeline */}
-          <div className="lg:col-span-2 space-y-3">
+          <div className="lg:col-span-2 flex flex-col gap-3">
+            <div className="flex-1 min-h-[400px]">
             {showTradingView ? (
               <TradingViewWidget
                 symbol={selectedInstrument}
                 interval={selectedTimeline}
-                height={400}
+                className="h-full"
               />
             ) : (
               <PnLChart
                 title={`${selectedInstrument || "MARKET"} PRICE CHART`}
-                height={380}
+                className="h-full"
                 instrument={selectedInstrument || undefined}
                 timeframe={timelineConfig.timeframe}
                 candles={timelineConfig.candles}
@@ -217,30 +218,11 @@ export default function MarketPage() {
                 onLoadingChange={setIsChartLoading}
               />
             )}
-
-            {/* Timeline buttons */}
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {TIMELINE_KEYS.map((tl) => (
-                <button
-                  key={tl}
-                  onClick={() => setSelectedTimeline(tl)}
-                  disabled={isChartLoading}
-                  className={cn(
-                    "px-3 py-1.5 rounded text-xs font-medium mono-data transition-colors",
-                    selectedTimeline === tl
-                      ? "bg-white text-black"
-                      : "bg-surface text-muted hover:text-white hover:bg-surface/80",
-                    isChartLoading && "opacity-50 cursor-not-allowed"
-                  )}
-                >
-                  {tl}
-                </button>
-              ))}
             </div>
           </div>
 
           {/* Right sidebar: constrained height */}
-          <div className="flex flex-col gap-5 lg:max-h-[540px]">
+          <div className="flex flex-col gap-5">
             {/* Technical Indicators -- fixed size */}
             <div className="bg-card border border-border rounded-md p-6 shrink-0">
               <h3 className="text-sm font-semibold tracking-wider text-muted uppercase mono-data mb-5">TECHNICAL INDICATORS</h3>

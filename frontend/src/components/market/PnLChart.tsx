@@ -161,7 +161,7 @@ export default function PnLChart({
     }
 
     return (
-      <ResponsiveContainer width="100%" height={height}>
+      <ResponsiveContainer width="100%" height="100%">
         <AreaChart
           data={data}
           onMouseMove={(e: Record<string, unknown>) => {
@@ -226,10 +226,10 @@ export default function PnLChart({
         </AreaChart>
       </ResponsiveContainer>
     );
-  }, [isLoading, data, height, chartColor, gradientId, tickInterval]);
+  }, [isLoading, data, chartColor, gradientId, tickInterval]);
 
   return (
-    <div className={cn("bg-card border border-border rounded-md p-6", className)}>
+    <div className={cn("bg-card border border-border rounded-md p-6 flex flex-col", className)}>
       <div className="flex items-center justify-between mb-5">
         <div>
           <h3 className="text-lg font-semibold tracking-wider text-muted uppercase mono-data">{title}</h3>
@@ -255,7 +255,7 @@ export default function PnLChart({
         </div>
       </div>
 
-      {chartBody}
+      <div className="flex-1 min-h-0">{chartBody}</div>
     </div>
   );
 }

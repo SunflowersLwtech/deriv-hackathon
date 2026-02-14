@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useEffect, useRef } from "react";
+import { cn } from "@/lib/utils";
 
 // ── Symbol mapping: display names → TradingView format ──────────
 const TV_SYMBOL_MAP: Record<string, string> = {
@@ -95,11 +96,11 @@ function TradingViewWidgetInner({
   }, [symbol, interval]);
 
   return (
-    <div className={className}>
+    <div className={cn("flex flex-col", className)}>
       <div
         ref={containerRef}
-        className="tradingview-widget-container"
-        style={{ height: `${height}px`, width: "100%" }}
+        className="tradingview-widget-container flex-1 min-h-0"
+        style={{ width: "100%" }}
       />
       <div className="text-center mt-1">
         <a
