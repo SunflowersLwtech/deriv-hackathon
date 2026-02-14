@@ -26,8 +26,6 @@ export const IDLE_STAGES: StageState = {
   content: "idle",
 };
 
-const DEMO_USER_ID = "d1000000-0000-0000-0000-000000000001";
-
 export const DEMO_EVENTS: { label: string; event: CustomEvent }[] = [
   { label: "BTC +5.2%", event: { instrument: "BTC/USD", price: 97500, change_pct: 5.2 } },
   { label: "ETH -4.1%", event: { instrument: "ETH/USD", price: 3100, change_pct: -4.1 } },
@@ -130,7 +128,7 @@ export default function PipelineProvider({ children }: { children: React.ReactNo
         const response = await api.runPipeline({
           custom_event: customEvent,
           user_portfolio: DEMO_PORTFOLIO,
-          user_id: DEMO_USER_ID,
+          // Backend auto-detects authenticated user from JWT
         });
 
         if (response.volatility_event) {
@@ -200,7 +198,7 @@ export default function PipelineProvider({ children }: { children: React.ReactNo
     try {
       const response = await api.runPipeline({
         user_portfolio: DEMO_PORTFOLIO,
-        user_id: DEMO_USER_ID,
+        // Backend auto-detects authenticated user from JWT
       });
 
       if (response.volatility_event) {

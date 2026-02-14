@@ -158,7 +158,13 @@ class AgentTeamPipelineView(APIView):
         custom_event = request.data.get("custom_event")
         user_portfolio = request.data.get("user_portfolio")
         skip_content = request.data.get("skip_content", False)
-        user_id = request.data.get("user_id")
+
+        # Auto-detect user_id from authenticated user
+        req_user = getattr(request, "user", None)
+        if req_user and getattr(req_user, "is_authenticated", False):
+            user_id = str(req_user.id)
+        else:
+            user_id = request.data.get("user_id")
 
         result = run_pipeline(
             instruments=instruments,
@@ -270,7 +276,13 @@ class AgentSentinelView(APIView):
         price_change_pct = float(request.data.get("price_change_pct", 0.0))
         direction = request.data.get("direction", "spike")
         event_summary = request.data.get("event_summary", "")
-        user_id = request.data.get("user_id", "d1000000-0000-0000-0000-000000000001")
+
+        # Auto-detect user_id from authenticated user
+        req_user = getattr(request, "user", None)
+        if req_user and getattr(req_user, "is_authenticated", False):
+            user_id = str(req_user.id)
+        else:
+            user_id = request.data.get("user_id", "d1000000-0000-0000-0000-000000000001")
 
         try:
             event = VolatilityEvent(

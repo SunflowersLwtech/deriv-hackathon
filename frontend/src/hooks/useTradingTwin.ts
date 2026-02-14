@@ -10,8 +10,6 @@ export interface UseTradingTwinReturn {
   generateTwin: (days?: number, startingEquity?: number) => Promise<void>;
 }
 
-const DEMO_USER_ID = "d1000000-0000-0000-0000-000000000001";
-
 export function useTradingTwin(userId?: string): UseTradingTwinReturn {
   const [twinData, setTwinData] = useState<TradingTwinResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -22,8 +20,10 @@ export function useTradingTwin(userId?: string): UseTradingTwinReturn {
       setIsLoading(true);
       setError(null);
       try {
+        // Backend auto-detects authenticated user's profile ID;
+        // pass userId prop if provided, otherwise let backend resolve.
         const result = await api.getTradingTwin(
-          userId || DEMO_USER_ID,
+          userId,
           days,
           startingEquity
         );
