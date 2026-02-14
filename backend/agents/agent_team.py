@@ -14,16 +14,20 @@ independently or chained via `run_pipeline()`.
 from __future__ import annotations
 
 import json
+import random
 import traceback
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+
+from concurrent.futures import ThreadPoolExecutor
 
 from agents.llm_client import get_llm_client
 from agents.prompts import MASTER_COMPLIANCE_RULES
 from market.tools import (
     fetch_price_data,
     fetch_price_history,
+    fetch_multi_timeframe_changes,
     search_news,
     get_sentiment,
 )
@@ -39,7 +43,7 @@ class VolatilityEvent:
     current_price: Optional[float]
     price_change_pct: float
     direction: str  # "spike" | "drop"
-    magnitude: str  # "high" | "medium"
+    magnitude: str  # "high" | "medium" | "low"
     detected_at: str = ""
     raw_data: Dict[str, Any] = field(default_factory=dict)
 
@@ -153,18 +157,13 @@ MONITOR_INSTRUMENTS = [
     "EUR/USD", "GBP/USD", "GOLD",
 ]
 
-# Threshold (%) for volatility detection per asset class
-_THRESHOLDS = {
-    "BTC/USD": 3.0,
-    "ETH/USD": 4.0,
-    "Volatility 75": 2.0,
-    "Volatility 100": 2.0,
-    "default": 0.5,
-}
-
-
-def _threshold(instrument: str) -> float:
-    return _THRESHOLDS.get(instrument, _THRESHOLDS["default"])
+_DEMO_EVENTS = [
+    {"instrument": "BTC/USD", "price": 97500.0, "change_pct": 5.2},
+    {"instrument": "ETH/USD", "price": 3100.0, "change_pct": -4.1},
+    {"instrument": "Volatility 75", "price": 900000.0, "change_pct": 2.3},
+    {"instrument": "EUR/USD", "price": 1.0845, "change_pct": -0.8},
+    {"instrument": "GOLD", "price": 2650.0, "change_pct": 1.5},
+]
 
 
 def market_monitor_detect(
@@ -174,11 +173,12 @@ def market_monitor_detect(
     """
     Agent 1 – Market Monitor.
 
-    Scans instruments for significant price movements using Redis-cached
-    price comparison for real delta detection.
-    Can also accept a *custom_event* dict for manual/demo triggers.
+    Scans instruments using multi-timeframe analysis (1h, 24h, 7d changes)
+    with ATR-relative magnitude classification. Always returns the most
+    unusual mover (highest ATR ratio) — never returns None when data is
+    available, so the pipeline always runs with real market data.
 
-    Returns the most significant VolatilityEvent found, or None.
+    Can also accept a *custom_event* dict for manual/demo triggers.
     """
     # ── Manual / demo trigger ──
     if custom_event:
@@ -188,75 +188,73 @@ def market_monitor_detect(
             price_change_pct=custom_event.get("change_pct", 5.0),
             direction="spike" if custom_event.get("change_pct", 5.0) > 0 else "drop",
             magnitude="high" if abs(custom_event.get("change_pct", 5.0)) >= 3.0 else "medium",
-            raw_data=custom_event,
+            raw_data={**custom_event, "reference_period": "custom"},
         )
 
-    # ── Automatic scan with Redis price caching ──
+    # ── Multi-timeframe scan (parallel) ──
     instruments = instruments or MONITOR_INSTRUMENTS
-    events: List[VolatilityEvent] = []
-    # Track all scanned instruments so we can fallback to the largest mover
-    all_scanned: List[VolatilityEvent] = []
 
-    for inst in instruments:
+    def _safe_fetch(inst: str) -> Optional[tuple]:
         try:
-            price_data = fetch_price_data(inst)
-            price = price_data.get("price")
-            if price is None:
-                continue
-
-            # Get previous price from Redis cache
-            previous_price = get_cached_price(inst)
-
-            if previous_price is not None and previous_price > 0:
-                # Real price change calculation
-                change_pct = ((price - previous_price) / previous_price) * 100
-            else:
-                # First run fallback: use recent price history
-                history = fetch_price_history(inst, timeframe="5m", count=12)
-                change_pct = history.get("change_percent", 0.0)
-
-            # Always update the cached price
-            set_cached_price(inst, price, ttl_seconds=300)
-
-            ve = VolatilityEvent(
-                instrument=inst,
-                current_price=price,
-                price_change_pct=round(change_pct, 2),
-                direction="spike" if change_pct > 0 else "drop",
-                magnitude="medium",
-                raw_data={
-                    **price_data,
-                    "previous_price": previous_price,
-                    "source": "redis_delta",
-                },
-            )
-            all_scanned.append(ve)
-
-            threshold = _threshold(inst)
-            if abs(change_pct) >= threshold:
-                ve.magnitude = "high" if abs(change_pct) >= threshold * 2 else "medium"
-                events.append(ve)
+            data = fetch_multi_timeframe_changes(inst)
+            if data.get("current_price") is None:
+                return None
+            return (inst, data)
         except Exception as exc:
             print(f"[MarketMonitor] Error scanning {inst}: {exc}")
+            return None
 
-    if events:
-        # Return the most significant event above threshold
-        events.sort(key=lambda e: abs(e.price_change_pct), reverse=True)
-        return events[0]
+    with ThreadPoolExecutor(max_workers=min(len(instruments), 6)) as executor:
+        raw_results = list(executor.map(_safe_fetch, instruments))
 
-    # Fallback: no instrument exceeded its threshold. Pick the largest
-    # mover, but only if its change is non-trivial (>= 0.1%). Otherwise
-    # the pipeline would analyze a non-event with a "medium" tag.
-    if all_scanned:
-        all_scanned.sort(key=lambda e: abs(e.price_change_pct), reverse=True)
-        best = all_scanned[0]
-        if abs(best.price_change_pct) < 0.1:
-            return None  # market is flat — nothing to analyze
-        best.magnitude = "medium"
-        best.raw_data["source"] = "auto_fallback"
-        return best
+    results = {inst: data for pair in raw_results if pair for inst, data in [pair]}
 
-    return None
+    if not results:
+        return None
+
+    # Build VolatilityEvents, classify magnitude via ATR ratio
+    all_events: List[VolatilityEvent] = []
+    for inst, data in results.items():
+        change_24h = data.get("change_24h", 0.0)
+        atr_ratio = data.get("atr_ratio", 0.0)
+
+        if atr_ratio >= 2.0:
+            magnitude = "high"
+        elif atr_ratio >= 1.0:
+            magnitude = "medium"
+        else:
+            magnitude = "low"
+
+        ve = VolatilityEvent(
+            instrument=inst,
+            current_price=data.get("current_price"),
+            price_change_pct=round(change_24h, 2),
+            direction="spike" if change_24h > 0 else "drop",
+            magnitude=magnitude,
+            raw_data={
+                "reference_period": "24h",
+                "change_1h": data.get("change_1h", 0.0),
+                "change_24h": change_24h,
+                "change_7d": data.get("change_7d", 0.0),
+                "atr_14": data.get("atr_14", 0.0),
+                "atr_ratio": atr_ratio,
+                "rsi_14": data.get("rsi_14", 50.0),
+                "trend": data.get("trend", "neutral"),
+                "source": "multi_timeframe",
+            },
+        )
+        all_events.append(ve)
+
+        # Update Redis cache
+        if ve.current_price:
+            set_cached_price(inst, ve.current_price, ttl_seconds=300)
+
+    if not all_events:
+        return None
+
+    # Return instrument with highest ATR ratio (most unusual move)
+    all_events.sort(key=lambda e: e.raw_data.get("atr_ratio", 0), reverse=True)
+    return all_events[0]
 
 
 # ─── Agent 2: Analyst ─────────────────────────────────────────────────
@@ -284,10 +282,30 @@ def analyst_analyze(event: VolatilityEvent) -> AnalysisReport:
 
     Takes a VolatilityEvent and produces a structured AnalysisReport
     by combining news search, sentiment analysis, and LLM reasoning.
+    Enhanced with multi-timeframe context (1h/24h/7d, RSI, ATR, trend).
     """
     # Gather context data
     news = search_news(event.instrument, limit=5)
-    sentiment = get_sentiment(event.instrument)
+
+    # Extract multi-timeframe context from raw_data
+    rd = event.raw_data
+    change_1h = rd.get("change_1h", 0.0)
+    change_24h = rd.get("change_24h", event.price_change_pct)
+    change_7d = rd.get("change_7d", 0.0)
+    rsi_14 = rd.get("rsi_14", 50.0)
+    atr_ratio = rd.get("atr_ratio", 0.0)
+    trend = rd.get("trend", "neutral")
+
+    rsi_label = "oversold" if rsi_14 < 30 else "overbought" if rsi_14 > 70 else "neutral"
+
+    # Pass momentum data to sentiment analysis
+    sentiment = get_sentiment(
+        event.instrument,
+        price_change_pct=event.price_change_pct,
+        rsi_14=rsi_14,
+        trend=trend,
+        atr_ratio=atr_ratio,
+    )
 
     news_context = "\n".join(
         f"- [{a.get('source', '?')}] {a.get('title', 'N/A')}: {(a.get('description') or '')[:120]}"
@@ -297,7 +315,12 @@ def analyst_analyze(event: VolatilityEvent) -> AnalysisReport:
     prompt = f"""Volatility Event detected:
 - Instrument: {event.instrument}
 - Current Price: {event.current_price}
-- Change: {event.price_change_pct:+.2f}%
+- Change 1h: {change_1h:+.2f}%
+- Change 24h: {change_24h:+.2f}%
+- Change 7d: {change_7d:+.2f}%
+- RSI(14): {rsi_14} — {rsi_label}
+- ATR ratio: {atr_ratio}x — move is {atr_ratio}x the average volatility
+- Trend: {trend}
 - Direction: {event.direction}
 - Magnitude: {event.magnitude}
 
@@ -306,7 +329,10 @@ Sentiment Data: {json.dumps(sentiment, default=str)}
 Recent News:
 {news_context}
 
-Analyze the root causes of this volatility event. Return JSON only."""
+Analyze the root causes of this price movement. Consider the multi-timeframe
+context — is this a short-term spike or part of a sustained trend?
+Your sentiment_score MUST reflect the directional evidence — never return exactly 0.0.
+Return JSON only."""
 
     try:
         llm = get_llm_client()
@@ -329,14 +355,18 @@ Analyze the root causes of this volatility event. Return JSON only."""
         )
     except Exception as exc:
         print(f"[Analyst] Error: {exc}")
+        # Ensure sentiment_score is never exactly 0.0
+        fallback_score = float(sentiment.get("score", 0.0))
+        if fallback_score == 0.0:
+            fallback_score = round(max(-1.0, min(1.0, event.price_change_pct / 5.0)), 2) or 0.05
         return AnalysisReport(
             instrument=event.instrument,
             event_summary=f"{event.instrument} experienced a {event.magnitude} {event.direction} of {event.price_change_pct:+.2f}%",
             root_causes=["Analysis unavailable – LLM error"],
             news_sources=[{"title": a.get("title", ""), "url": a.get("url", "")} for a in news[:3]],
-            sentiment=sentiment.get("sentiment", "neutral"),
-            sentiment_score=float(sentiment.get("score", 0.0)),
-            key_data_points=[f"Price: {event.current_price}"],
+            sentiment=sentiment.get("sentiment", "bullish" if event.price_change_pct > 0 else "bearish"),
+            sentiment_score=fallback_score,
+            key_data_points=[f"Price: {event.current_price}", f"Change: {event.price_change_pct:+.2f}% ({ref_period})"],
         )
 
 
@@ -805,12 +835,21 @@ def run_pipeline(
             custom_event=custom_event,
         )
         if event is None:
-            result.status = "no_event"
-            result.errors.append("No significant volatility detected.")
-            result.pipeline_finished_at = datetime.now().isoformat()
-            return result
-
-        result.volatility_event = asdict(event)
+            # All data sources failed (network down). Use demo fallback.
+            demo = random.choice(_DEMO_EVENTS)
+            change = demo["change_pct"]
+            event = VolatilityEvent(
+                instrument=demo["instrument"],
+                current_price=demo["price"],
+                price_change_pct=change,
+                direction="spike" if change > 0 else "drop",
+                magnitude="high" if abs(change) >= 3.0 else "medium",
+                raw_data={"source": "demo", "reference_period": "demo"},
+            )
+            result.volatility_event = asdict(event)
+            result.volatility_event["demo_mode"] = True
+        else:
+            result.volatility_event = asdict(event)
     except Exception as exc:
         result.status = "error"
         result.errors.append(f"Monitor error: {exc}")

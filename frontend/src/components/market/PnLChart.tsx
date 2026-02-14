@@ -15,6 +15,7 @@ import api from "@/lib/api";
 
 interface DataPoint {
   time: string;
+  rawTime: string;
   value: number;
 }
 
@@ -24,15 +25,24 @@ interface PnLChartProps {
   height?: number;
   instrument?: string;
   timeframe?: string;
+  candles?: number;
+  timeline?: string;
+  onLoadingChange?: (loading: boolean) => void;
 }
 
-function formatTimeLabel(isoOrDate: string | Date): string {
+function formatTimeLabel(isoOrDate: string | Date, timeline?: string): string {
   const date = typeof isoOrDate === "string" ? new Date(isoOrDate) : isoOrDate;
-  return date.toLocaleTimeString("en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+  if (!timeline || ["1H", "6H"].includes(timeline)) {
+    return date.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  }
+  if (["1D", "3D", "1W", "2W"].includes(timeline)) {
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  }
+  return date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
 }
 
 export default function PnLChart({
@@ -41,6 +51,9 @@ export default function PnLChart({
   height = 300,
   instrument,
   timeframe = "1h",
+  candles = 120,
+  timeline,
+  onLoadingChange,
 }: PnLChartProps) {
   const [data, setData] = useState<DataPoint[]>([]);
   const [hoveredValue, setHoveredValue] = useState<number | null>(null);
@@ -48,17 +61,20 @@ export default function PnLChart({
 
   useEffect(() => {
     let cancelled = false;
+    setData([]);
 
     async function fetchPriceChart(symbol: string, tf: string): Promise<DataPoint[]> {
-      const history = await api.getMarketHistory(symbol, tf, 120);
+      const history = await api.getMarketHistory(symbol, tf, candles);
       return (history.candles || []).map((candle) => ({
-        time: formatTimeLabel(candle.time),
+        rawTime: candle.time,
+        time: formatTimeLabel(candle.time, timeline),
         value: Number(candle.close || 0),
       }));
     }
 
     const fetchData = async () => {
       setIsLoading(true);
+      onLoadingChange?.(true);
       try {
         if (instrument) {
           const chartData = await fetchPriceChart(instrument, timeframe);
@@ -66,7 +82,6 @@ export default function PnLChart({
             setData(chartData);
           }
         } else {
-          // Try loading cumulative PnL from trades
           let hasTrades = false;
           try {
             const tradesResp = await api.getTrades();
@@ -83,17 +98,17 @@ export default function PnLChart({
                 cumulative += Number(trade.pnl || 0);
                 const timestamp = trade.opened_at || trade.created_at || new Date().toISOString();
                 return {
-                  time: formatTimeLabel(timestamp),
+                  rawTime: timestamp,
+                  time: formatTimeLabel(timestamp, timeline),
                   value: Number(cumulative.toFixed(2)),
                 };
               });
               if (!cancelled) setData(points);
             }
           } catch {
-            // getTrades failed (backend cold start, timeout, etc.) — fall through to price chart
+            // getTrades failed — fall through to price chart
           }
 
-          // No trades or getTrades failed → show BTC/USD price chart (24/7 available)
           if (!hasTrades && !cancelled) {
             try {
               const chartData = await fetchPriceChart("cryBTCUSD", "1h");
@@ -101,28 +116,29 @@ export default function PnLChart({
                 setData(chartData);
               }
             } catch {
-              // getMarketHistory also failed — keep existing data (don't overwrite with [])
+              // getMarketHistory also failed
             }
           }
         }
       } catch {
-        // Inner try/catches handle individual failures — nothing else to do here
+        // Inner try/catches handle individual failures
       } finally {
         if (!cancelled) {
           setIsLoading(false);
+          onLoadingChange?.(false);
         }
       }
     };
 
     fetchData();
-    const interval = setInterval(fetchData, instrument ? 15000 : 30000);
+    const interval = setInterval(fetchData, instrument ? 30000 : 60000);
 
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [instrument, timeframe]);
+  }, [instrument, timeframe, candles, timeline]);
 
   const currentValue = hoveredValue ?? data[data.length - 1]?.value ?? 0;
   const startValue = data[0]?.value ?? 0;
@@ -130,6 +146,11 @@ export default function PnLChart({
   const pnlPercent = startValue !== 0 ? (pnl / Math.abs(startValue)) * 100 : 0;
   const isPositive = pnl >= 0;
   const chartColor = isPositive ? "#4ade80" : "#f87171";
+  const gradientId = `pnlGradient-${(instrument || "portfolio").replace(/[^a-zA-Z0-9]/g, "")}`;
+
+  const tickInterval = useMemo(() => {
+    return data.length > 5 ? Math.floor(data.length / 5) : 0;
+  }, [data.length]);
 
   const chartBody = useMemo(() => {
     if (isLoading) {
@@ -152,7 +173,7 @@ export default function PnLChart({
           onMouseLeave={() => setHoveredValue(null)}
         >
           <defs>
-            <linearGradient id="pnlGradient" x1="0" y1="0" x2="0" y2="1">
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={chartColor} stopOpacity={0.3} />
               <stop offset="100%" stopColor={chartColor} stopOpacity={0.02} />
             </linearGradient>
@@ -163,7 +184,7 @@ export default function PnLChart({
             tick={{ fontSize: 11, fill: "#71717a", fontFamily: "JetBrains Mono, monospace" }}
             axisLine={{ stroke: "#27272a" }}
             tickLine={false}
-            interval="preserveStartEnd"
+            interval={tickInterval}
           />
           <YAxis
             tick={{ fontSize: 11, fill: "#71717a", fontFamily: "JetBrains Mono, monospace" }}
@@ -182,6 +203,10 @@ export default function PnLChart({
               color: "#ffffff",
               padding: "8px 12px",
             }}
+            labelFormatter={(_, payload) => {
+              const raw = (payload?.[0]?.payload as DataPoint)?.rawTime;
+              return raw ? new Date(raw).toLocaleString() : "";
+            }}
             formatter={(value: number | undefined) => [Number(value ?? 0).toFixed(2), "Value"]}
           />
           <Area
@@ -189,7 +214,7 @@ export default function PnLChart({
             dataKey="value"
             stroke={chartColor}
             strokeWidth={1.5}
-            fill="url(#pnlGradient)"
+            fill={`url(#${gradientId})`}
             dot={false}
             activeDot={{
               r: 3,
@@ -201,7 +226,7 @@ export default function PnLChart({
         </AreaChart>
       </ResponsiveContainer>
     );
-  }, [isLoading, data, height, chartColor]);
+  }, [isLoading, data, height, chartColor, gradientId, tickInterval]);
 
   return (
     <div className={cn("bg-card border border-border rounded-md p-6", className)}>

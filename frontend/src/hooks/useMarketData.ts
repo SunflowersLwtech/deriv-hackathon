@@ -184,8 +184,8 @@ export function useMarketInsights() {
 }
 
 const DEFAULT_INSTRUMENTS = [
-  "cryBTCUSD", "cryETHUSD", "R_100",
-  "R_75", "R_10", "frxEURUSD",
+  "BTC/USD", "ETH/USD", "Volatility 100",
+  "Volatility 75", "Volatility 10", "EUR/USD",
 ];
 
 export function useInstrumentUniverse() {
@@ -193,7 +193,7 @@ export function useInstrumentUniverse() {
     // Use the fast /market/instruments/ endpoint (simple GET, no LLM/WS)
     // instead of getMarketBrief which is slow (6 Deriv WS + LLM summary).
     const resp = await api.getActiveSymbols();
-    const symbols = (resp.instruments || []).map((s) => s.symbol || s.display_name).filter(Boolean);
+    const symbols = (resp.instruments || []).map((s) => s.display_name || s.symbol).filter(Boolean);
     return symbols.length > 0 ? symbols.slice(0, 20) : DEFAULT_INSTRUMENTS;
   }, []);
 

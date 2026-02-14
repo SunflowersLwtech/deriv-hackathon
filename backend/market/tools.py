@@ -105,10 +105,16 @@ DERIV_SYMBOLS = {
 
 TIMEFRAME_TO_GRANULARITY = {
     "1m": 60,
+    "2m": 120,
+    "3m": 180,
     "5m": 300,
+    "10m": 600,
     "15m": 900,
+    "30m": 1800,
     "1h": 3600,
+    "2h": 7200,
     "4h": 14400,
+    "8h": 28800,
     "1d": 86400,
 }
 
@@ -363,7 +369,7 @@ async def _fetch_deriv_history_async(
     request_payload = {
         "ticks_history": deriv_symbol,
         "adjust_start_time": 1,
-        "count": max(10, min(count, 500)),
+        "count": max(10, min(count, 5000)),
         "end": "latest",
         "style": "candles",
         "granularity": granularity,
@@ -471,6 +477,139 @@ def fetch_price_history(
         "change_percent": round(change_percent, 4),
         "source": "deriv",
         "error": result.get("error"),
+    }
+
+
+# ─── Multi-timeframe analysis helpers ────────────────────────────────
+
+
+def _compute_atr(candles: List[Dict[str, Any]], period: int = 14) -> float:
+    """Compute Average True Range from OHLC candles."""
+    if len(candles) < period + 1:
+        # Not enough data for full ATR, use what we have
+        if len(candles) < 2:
+            return 0.0
+        true_ranges = []
+        for i in range(1, len(candles)):
+            high = candles[i]["high"]
+            low = candles[i]["low"]
+            prev_close = candles[i - 1]["close"]
+            tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
+            true_ranges.append(tr)
+        return sum(true_ranges) / len(true_ranges) if true_ranges else 0.0
+
+    true_ranges = []
+    for i in range(1, len(candles)):
+        high = candles[i]["high"]
+        low = candles[i]["low"]
+        prev_close = candles[i - 1]["close"]
+        tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
+        true_ranges.append(tr)
+
+    return sum(true_ranges[-period:]) / period
+
+
+def _compute_rsi(closes: List[float], period: int = 14) -> float:
+    """Compute RSI from close prices."""
+    if len(closes) < period + 1:
+        return 50.0
+
+    gains = []
+    losses = []
+    for i in range(1, len(closes)):
+        delta = closes[i] - closes[i - 1]
+        gains.append(max(delta, 0))
+        losses.append(abs(min(delta, 0)))
+
+    avg_gain = sum(gains[-period:]) / period
+    avg_loss = sum(losses[-period:]) / period
+
+    if avg_loss == 0:
+        return 100.0 if avg_gain > 0 else 50.0
+
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
+
+
+def fetch_multi_timeframe_changes(instrument: str) -> Dict[str, Any]:
+    """
+    Fetch multi-timeframe price changes, ATR(14), RSI(14), and trend for an instrument.
+
+    Returns dict with: current_price, change_1h, change_24h, change_7d,
+    atr_14, atr_ratio, rsi_14, trend, source.
+    """
+    # Parallel fetch: current price + 1h candles (168 = 7 days)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        price_future = executor.submit(fetch_price_data, instrument)
+        history_future = executor.submit(fetch_price_history, instrument, "1h", 168)
+        price_data = price_future.result()
+        history = history_future.result()
+
+    price = price_data.get("price")
+    candles = history.get("candles", []) or []
+
+    if price is None or len(candles) < 2:
+        return {
+            "current_price": price,
+            "change_1h": 0.0,
+            "change_24h": 0.0,
+            "change_7d": 0.0,
+            "atr_14": 0.0,
+            "atr_ratio": 0.0,
+            "rsi_14": 50.0,
+            "trend": "neutral",
+            "source": "multi_timeframe",
+            "error": price_data.get("error") or "Insufficient candle data",
+        }
+
+    closes = [c["close"] for c in candles]
+
+    # 1h change: current price vs 1 candle ago
+    price_1h_ago = candles[-2]["close"] if len(candles) >= 2 else price
+    change_1h = ((price - price_1h_ago) / price_1h_ago * 100) if price_1h_ago else 0.0
+
+    # 24h change: current price vs 24 candles ago
+    if len(candles) >= 24:
+        price_24h_ago = candles[-24]["close"]
+    else:
+        price_24h_ago = candles[0]["close"]
+    change_24h = ((price - price_24h_ago) / price_24h_ago * 100) if price_24h_ago else 0.0
+
+    # 7d change: current price vs oldest candle
+    price_7d_ago = candles[0]["close"]
+    change_7d = ((price - price_7d_ago) / price_7d_ago * 100) if price_7d_ago else 0.0
+
+    # ATR(14) on 1h candles
+    atr_14 = _compute_atr(candles, period=14)
+
+    # RSI(14) on 1h candle closes
+    rsi_14 = _compute_rsi(closes, period=14)
+
+    # Trend from SMA20/SMA50
+    sma20 = sum(closes[-20:]) / 20 if len(closes) >= 20 else price
+    sma50 = sum(closes[-50:]) / 50 if len(closes) >= 50 else sma20
+
+    if price > sma20 > sma50:
+        trend = "bullish"
+    elif price < sma20 < sma50:
+        trend = "bearish"
+    else:
+        trend = "neutral"
+
+    # ATR ratio: |24h price change in units| / ATR
+    price_change_abs = abs(price - price_24h_ago)
+    atr_ratio = round(price_change_abs / atr_14, 2) if atr_14 > 0 else 0.0
+
+    return {
+        "current_price": price,
+        "change_1h": round(change_1h, 2),
+        "change_24h": round(change_24h, 2),
+        "change_7d": round(change_7d, 2),
+        "atr_14": round(atr_14, 6),
+        "atr_ratio": atr_ratio,
+        "rsi_14": round(rsi_14, 1),
+        "trend": trend,
+        "source": "multi_timeframe",
     }
 
 
@@ -812,6 +951,99 @@ def analyze_technicals(instrument: str, timeframe: str = "1h") -> Dict[str, Any]
         f"Observed volatility is {volatility}."
     )
 
+    # ── Generate detailed insights ──────────────────────────────────
+    insights: list[str] = []
+
+    # 1. SMA alignment insight
+    if sma50 is not None:
+        if current_price > sma20 > sma50:
+            insights.append(
+                f"SMA alignment is bullish: price ({current_price:.4f}) > SMA20 ({sma20:.4f}) > SMA50 ({sma50:.4f}). "
+                "This stacked alignment suggests sustained upward momentum."
+            )
+        elif current_price < sma20 < sma50:
+            insights.append(
+                f"SMA alignment is bearish: price ({current_price:.4f}) < SMA20 ({sma20:.4f}) < SMA50 ({sma50:.4f}). "
+                "This stacked alignment suggests sustained downward pressure."
+            )
+        elif abs(sma20 - sma50) / sma50 < 0.002:
+            insights.append(
+                f"SMA20 ({sma20:.4f}) and SMA50 ({sma50:.4f}) are converging — possible trend change or breakout ahead."
+            )
+        else:
+            insights.append(
+                f"Mixed SMA signals: SMA20 at {sma20:.4f}, SMA50 at {sma50:.4f}. "
+                "No clear directional alignment; watch for a crossover."
+            )
+    else:
+        insights.append(
+            f"Only SMA20 available ({sma20:.4f}). Insufficient history for SMA50 — short-term trend only."
+        )
+
+    # 2. RSI interpretation
+    if rsi14 > 70:
+        insights.append(
+            f"RSI(14) at {rsi14:.1f} indicates overbought conditions. "
+            "Price may be extended; watch for pullback or reversal signals."
+        )
+    elif rsi14 < 30:
+        insights.append(
+            f"RSI(14) at {rsi14:.1f} indicates oversold conditions. "
+            "Potential bounce or reversal opportunity — confirm with price action."
+        )
+    elif rsi14 > 55:
+        insights.append(
+            f"RSI(14) at {rsi14:.1f} shows moderate bullish momentum. "
+            "Buyers have the edge but not overextended."
+        )
+    elif rsi14 < 45:
+        insights.append(
+            f"RSI(14) at {rsi14:.1f} shows mild bearish pressure. "
+            "Sellers are present but momentum is not extreme."
+        )
+    else:
+        insights.append(
+            f"RSI(14) at {rsi14:.1f} is in neutral territory (45-55). No strong momentum bias."
+        )
+
+    # 3. Support/resistance proximity
+    price_range = resistance - support if resistance != support else 1
+    dist_to_resistance = (resistance - current_price) / price_range * 100
+    dist_to_support = (current_price - support) / price_range * 100
+
+    if dist_to_resistance < 15:
+        insights.append(
+            f"Price is near resistance ({resistance:.4f}), only {dist_to_resistance:.0f}% of the recent range away. "
+            "Watch for rejection or breakout above this level."
+        )
+    elif dist_to_support < 15:
+        insights.append(
+            f"Price is near support ({support:.4f}), only {dist_to_support:.0f}% of the recent range above it. "
+            "Watch for bounce or breakdown below this level."
+        )
+    else:
+        insights.append(
+            f"Price is mid-range between support ({support:.4f}) and resistance ({resistance:.4f}). "
+            f"Room to move in either direction ({dist_to_support:.0f}% from support, {dist_to_resistance:.0f}% from resistance)."
+        )
+
+    # 4. Volatility context
+    if volatility == "high":
+        insights.append(
+            f"Volatility is high (stddev of returns: {vol:.4f}). "
+            "Wider stops and smaller position sizes recommended. Breakout moves are more likely."
+        )
+    elif volatility == "low":
+        insights.append(
+            f"Volatility is low (stddev of returns: {vol:.4f}). "
+            "Tight ranges may precede a breakout. Consider range-bound strategies."
+        )
+    else:
+        insights.append(
+            f"Volatility is moderate (stddev of returns: {vol:.4f}). "
+            "Normal trading conditions — standard risk management applies."
+        )
+
     return {
         "instrument": instrument,
         "timeframe": timeframe,
@@ -827,17 +1059,33 @@ def analyze_technicals(instrument: str, timeframe: str = "1h") -> Dict[str, Any]
             "sma50": round(sma50, 6) if sma50 is not None else None,
             "rsi14": round(rsi14, 2),
         },
+        "insights": insights,
         "summary": summary,
         "source": "deriv",
     }
 
 
-def get_sentiment(instrument: str) -> Dict[str, Any]:
+def get_sentiment(
+    instrument: str,
+    price_change_pct: float = 0.0,
+    rsi_14: Optional[float] = None,
+    trend: Optional[str] = None,
+    atr_ratio: Optional[float] = None,
+) -> Dict[str, Any]:
     """
     Get market sentiment for an instrument.
 
+    Combines news-based LLM analysis with price-action context and
+    optional momentum data (RSI, trend, ATR ratio) when available.
+    Never returns score=0.0 — at minimum derives sentiment from
+    the observed price movement so users always see meaningful data.
+
     Args:
         instrument: Trading instrument
+        price_change_pct: Recent price change % (used as fallback signal)
+        rsi_14: Optional RSI(14) value for momentum context
+        trend: Optional trend direction ("bullish"/"bearish"/"neutral")
+        atr_ratio: Optional ATR ratio (how unusual the move is)
 
     Returns:
         Sentiment analysis results
@@ -845,20 +1093,41 @@ def get_sentiment(instrument: str) -> Dict[str, Any]:
     # Use DeepSeek to analyze sentiment from news
     news = search_news(instrument, limit=10)
 
+    # Also try broader search if instrument-specific search is empty
     if not news:
-        return {
-            "instrument": instrument,
-            "sentiment": "neutral",
-            "score": 0.0,
-            "sources": []
+        # Try base asset name (e.g. "Bitcoin" for BTC/USD, "Gold" for GOLD)
+        _ASSET_NAMES = {
+            "BTC/USD": "Bitcoin", "ETH/USD": "Ethereum",
+            "EUR/USD": "Euro Dollar forex", "GBP/USD": "British Pound forex",
+            "GOLD": "Gold commodity",
         }
+        broad_query = _ASSET_NAMES.get(instrument, instrument.replace("/", " "))
+        news = search_news(broad_query, limit=10)
+
+    if not news:
+        # No news at all — derive sentiment purely from price action
+        return _sentiment_from_price_action(instrument, price_change_pct)
 
     news_summary = "\n".join([
         f"- {article['title']}: {article.get('description', '')[:100]}"
         for article in news[:5]
     ])
 
+    # Build momentum context from multi-timeframe data
+    momentum_lines = []
+    if rsi_14 is not None:
+        rsi_label = "oversold" if rsi_14 < 30 else "overbought" if rsi_14 > 70 else "neutral"
+        momentum_lines.append(f"- RSI(14): {rsi_14} ({rsi_label})")
+    if trend:
+        momentum_lines.append(f"- Trend: {trend}")
+    if atr_ratio is not None:
+        momentum_lines.append(f"- Volatility: move is {atr_ratio}x the average true range")
+    momentum_context = "\n".join(momentum_lines)
+    if momentum_context:
+        momentum_context = f"\n\nPrice Momentum Context:\n{momentum_context}"
+
     prompt = f"""Analyze the sentiment of news articles about {instrument}.
+The instrument recently moved {price_change_pct:+.2f}%.{momentum_context}
 
 News Articles:
 {news_summary}
@@ -866,7 +1135,7 @@ News Articles:
 Return a JSON object with:
 {{
   "sentiment": "bullish" | "bearish" | "neutral",
-  "score": -1.0 to 1.0 (negative=bearish, positive=bullish),
+  "score": -1.0 to 1.0 (negative=bearish, positive=bullish). NEVER use exactly 0.0 — always give a directional lean based on the evidence.,
   "key_points": ["point1", "point2", "point3"],
   "confidence": 0.0 to 1.0
 }}"""
@@ -888,17 +1157,42 @@ Return a JSON object with:
             response_text = response_text.split("```")[1].split("```")[0].strip()
 
         sentiment_data = json.loads(response_text)
+        # Guard: if LLM still returned 0.0, nudge it based on price action
+        score = float(sentiment_data.get("score", 0.0))
+        if score == 0.0 and price_change_pct != 0.0:
+            score = max(-1.0, min(1.0, price_change_pct / 5.0))
+            sentiment_data["score"] = round(score, 2)
+            sentiment_data["sentiment"] = "bullish" if score > 0 else "bearish"
+
         sentiment_data["instrument"] = instrument
         sentiment_data["sources"] = [n["source"] for n in news[:5]]
         return sentiment_data
     except Exception as e:
-        print(f"Sentiment analysis error: {e}")
-        return {
-            "instrument": instrument,
-            "sentiment": "neutral",
-            "score": 0.0,
-            "sources": [n["source"] for n in news[:5]]
-        }
+        logger.warning("Sentiment LLM error for %s: %s", instrument, e)
+        # Fallback: derive from price action + attribute news sources
+        result = _sentiment_from_price_action(instrument, price_change_pct)
+        result["sources"] = [n["source"] for n in news[:5]]
+        return result
+
+
+def _sentiment_from_price_action(instrument: str, change_pct: float) -> Dict[str, Any]:
+    """Derive a basic sentiment from price movement when LLM/news fails."""
+    if change_pct > 0.3:
+        sentiment, score = "bullish", round(min(1.0, change_pct / 5.0), 2)
+    elif change_pct < -0.3:
+        sentiment, score = "bearish", round(max(-1.0, change_pct / 5.0), 2)
+    else:
+        # Even "neutral" gets a slight lean so score is never exactly 0
+        score = round(change_pct / 5.0, 2) if change_pct != 0 else 0.05
+        sentiment = "bullish" if score > 0 else "bearish" if score < 0 else "neutral"
+    return {
+        "instrument": instrument,
+        "sentiment": sentiment,
+        "score": score,
+        "key_points": [f"Price moved {change_pct:+.2f}% — sentiment derived from price action"],
+        "confidence": 0.4,
+        "sources": [],
+    }
 
 
 def explain_market_move(instrument: str, move_description: str) -> Dict[str, Any]:

@@ -136,7 +136,16 @@ export default function PipelinePage() {
             {/* Stage 1 Result: Volatility Event */}
             {result.volatility_event && (
               <ResultCard title="VOLATILITY EVENT DETECTED" icon="📡" borderColor="border-cyan/30">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {result.volatility_event.demo_mode && (
+                  <div className="mb-4 flex items-center gap-2 bg-yellow-500/10 border border-yellow-500/30 rounded-sm px-3 py-2">
+                    <span className="text-yellow-400 text-xs">&#x26A0;</span>
+                    <span className="text-[11px] text-yellow-400 mono-data tracking-wider">
+                      DEMO MODE — No real volatility detected. Showing simulated analysis.
+                    </span>
+                  </div>
+                )}
+                {/* Multi-timeframe price row */}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                   <MiniStat label="Instrument" value={result.volatility_event.instrument} />
                   <MiniStat
                     label="Price"
@@ -147,14 +156,67 @@ export default function PipelinePage() {
                     }
                   />
                   <MiniStat
-                    label="Change"
+                    label="1h Change"
+                    value={`${Number(result.volatility_event.raw_data?.change_1h ?? 0) > 0 ? "+" : ""}${Number(result.volatility_event.raw_data?.change_1h ?? 0).toFixed(2)}%`}
+                    color={Number(result.volatility_event.raw_data?.change_1h ?? 0) > 0 ? "text-profit" : Number(result.volatility_event.raw_data?.change_1h ?? 0) < 0 ? "text-loss" : "text-white"}
+                  />
+                  <MiniStat
+                    label="24h Change"
                     value={`${result.volatility_event.price_change_pct > 0 ? "+" : ""}${result.volatility_event.price_change_pct}%`}
                     color={result.volatility_event.price_change_pct > 0 ? "text-profit" : "text-loss"}
                   />
                   <MiniStat
+                    label="7d Change"
+                    value={`${Number(result.volatility_event.raw_data?.change_7d ?? 0) > 0 ? "+" : ""}${Number(result.volatility_event.raw_data?.change_7d ?? 0).toFixed(2)}%`}
+                    color={Number(result.volatility_event.raw_data?.change_7d ?? 0) > 0 ? "text-profit" : Number(result.volatility_event.raw_data?.change_7d ?? 0) < 0 ? "text-loss" : "text-white"}
+                  />
+                </div>
+
+                {/* Market context row */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+                  <MiniStat
                     label="Magnitude"
                     value={result.volatility_event.magnitude.toUpperCase()}
-                    color={result.volatility_event.magnitude === "high" ? "text-loss" : "text-yellow-400"}
+                    color={
+                      result.volatility_event.magnitude === "high"
+                        ? "text-loss"
+                        : result.volatility_event.magnitude === "medium"
+                          ? "text-yellow-400"
+                          : "text-muted-foreground"
+                    }
+                  />
+                  <MiniStat
+                    label="ATR Ratio"
+                    value={`${Number(result.volatility_event.raw_data?.atr_ratio ?? 0).toFixed(1)}x`}
+                    color={
+                      Number(result.volatility_event.raw_data?.atr_ratio ?? 0) >= 2.0
+                        ? "text-loss"
+                        : Number(result.volatility_event.raw_data?.atr_ratio ?? 0) >= 1.0
+                          ? "text-yellow-400"
+                          : "text-muted-foreground"
+                    }
+                  />
+                  <MiniStat
+                    label="RSI(14)"
+                    value={String(Number(result.volatility_event.raw_data?.rsi_14 ?? 50).toFixed(1))}
+                    color={
+                      Number(result.volatility_event.raw_data?.rsi_14 ?? 50) < 30
+                        ? "text-profit"
+                        : Number(result.volatility_event.raw_data?.rsi_14 ?? 50) > 70
+                          ? "text-loss"
+                          : "text-white"
+                    }
+                  />
+                  <MiniStat
+                    label="Trend"
+                    value={String(result.volatility_event.raw_data?.trend ?? "neutral").toUpperCase()}
+                    color={
+                      result.volatility_event.raw_data?.trend === "bullish"
+                        ? "text-profit"
+                        : result.volatility_event.raw_data?.trend === "bearish"
+                          ? "text-loss"
+                          : "text-white"
+                    }
                   />
                 </div>
               </ResultCard>
@@ -304,7 +366,7 @@ export default function PipelinePage() {
                 {result.sentinel_insight.user_stats_snapshot && (
                   <div className="mt-4 pt-3 border-t border-border">
                     <h4 className="text-[11px] text-muted-foreground uppercase tracking-wider mb-3 mono-data">
-                      TRADING STATS (LAST {result.sentinel_insight.user_stats_snapshot?.period_days || 30} DAYS)
+                      TRADING STATS (LAST {Number(result.sentinel_insight.user_stats_snapshot?.period_days ?? 30)} DAYS)
                     </h4>
                     <div className="flex flex-wrap gap-4">
                       <MiniStat

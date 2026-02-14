@@ -698,6 +698,7 @@ export interface MarketTechnicals {
     sma50?: number | null;
     rsi14?: number;
   };
+  insights?: string[];
   summary?: string;
   source?: string;
   error?: string;
@@ -923,9 +924,10 @@ export interface VolatilityEventData {
   current_price: number | null;
   price_change_pct: number;
   direction: "spike" | "drop";
-  magnitude: "high" | "medium";
+  magnitude: "high" | "medium" | "low";
   detected_at: string;
   raw_data: Record<string, unknown>;
+  demo_mode?: boolean;
 }
 
 export interface VolatilityEventInput {
@@ -933,7 +935,7 @@ export interface VolatilityEventInput {
   current_price?: number;
   price_change_pct: number;
   direction: "spike" | "drop";
-  magnitude: "high" | "medium";
+  magnitude: "high" | "medium" | "low";
 }
 
 export interface AnalysisReportResponse {

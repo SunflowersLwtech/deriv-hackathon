@@ -1,7 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
+import {
+  Bitcoin,
+  Gem,
+  BarChart3,
+  TrendingUp,
+  TrendingDown,
+  CircleDollarSign,
+  ChevronDown,
+} from "lucide-react";
 import AppShell from "@/components/layout/AppShell";
 import { usePageState } from "@/hooks/usePageState";
 import DataCard from "@/components/ui/DataCard";
@@ -11,8 +20,14 @@ import LoadingDots from "@/components/ui/LoadingDots";
 import { cn } from "@/lib/utils";
 import api, { type MarketSentiment, type MarketTechnicals } from "@/lib/api";
 import { useInstrumentUniverse, useEconomicCalendar, useTopHeadlines } from "@/hooks/useMarketData";
+import { hasTradingViewSymbol } from "@/components/market/TradingViewWidget";
 
 const PnLChart = dynamic(() => import("@/components/market/PnLChart"), {
+  loading: () => <div className="bg-card border border-border rounded-md p-6 h-[400px] animate-shimmer" />,
+  ssr: false,
+});
+
+const TradingViewWidget = dynamic(() => import("@/components/market/TradingViewWidget"), {
   loading: () => <div className="bg-card border border-border rounded-md p-6 h-[400px] animate-shimmer" />,
   ssr: false,
 });
@@ -22,21 +37,45 @@ const MarketOverview = dynamic(() => import("@/components/market/MarketOverview"
   ssr: false,
 });
 
-const INSTRUMENT_ICONS: Record<string, string> = {
-  "BTC/USD": "₿",
-  "ETH/USD": "Ξ",
-  "Volatility 75": "📊",
-  "Volatility 100": "📈",
-  "Volatility 10": "📉",
-  "EUR/USD": "💶",
-  "GBP/USD": "💷",
-  "USD/JPY": "💴",
-  GOLD: "🥇",
+// ── Lucide icon mapping ──────────────────────────────────────────
+function getInstrumentIcon(symbol: string): ReactNode {
+  const iconMap: Record<string, ReactNode> = {
+    "BTC/USD": <Bitcoin className="w-4 h-4 text-amber-500" />,
+    "ETH/USD": <Gem className="w-4 h-4 text-indigo-400" />,
+    "Volatility 75": <BarChart3 className="w-4 h-4 text-cyan-400" />,
+    "Volatility 100": <TrendingUp className="w-4 h-4 text-emerald-400" />,
+    "Volatility 10": <TrendingDown className="w-4 h-4 text-rose-400" />,
+    "EUR/USD": <CircleDollarSign className="w-4 h-4 text-blue-400" />,
+    "GBP/USD": <CircleDollarSign className="w-4 h-4 text-violet-400" />,
+    "USD/JPY": <CircleDollarSign className="w-4 h-4 text-pink-400" />,
+    GOLD: <CircleDollarSign className="w-4 h-4 text-yellow-500" />,
+    "XAU/USD": <CircleDollarSign className="w-4 h-4 text-yellow-500" />,
+  };
+  return iconMap[symbol] || <BarChart3 className="w-4 h-4 text-zinc-400" />;
+}
+
+// ── Timeline config ──────────────────────────────────────────────
+type TimelineOption = "1H" | "6H" | "1D" | "3D" | "1W" | "2W" | "1M" | "3M" | "6M" | "1Y";
+
+const TIMELINE_OPTIONS: Record<TimelineOption, { timeframe: string; candles: number }> = {
+  "1H": { timeframe: "1m", candles: 60 },
+  "6H": { timeframe: "5m", candles: 72 },
+  "1D": { timeframe: "15m", candles: 96 },
+  "3D": { timeframe: "30m", candles: 144 },
+  "1W": { timeframe: "1h", candles: 168 },
+  "2W": { timeframe: "2h", candles: 168 },
+  "1M": { timeframe: "4h", candles: 180 },
+  "3M": { timeframe: "1d", candles: 90 },
+  "6M": { timeframe: "1d", candles: 180 },
+  "1Y": { timeframe: "1d", candles: 365 },
 };
+
+const TIMELINE_KEYS = Object.keys(TIMELINE_OPTIONS) as TimelineOption[];
 
 export default function MarketPage() {
   const { data: availableInstruments } = useInstrumentUniverse();
   const [selectedInstrument, setSelectedInstrument] = usePageState("market:instrument", "");
+  const [selectedTimeline, setSelectedTimeline] = usePageState<TimelineOption>("market:timeline", "1D");
   const [question, setQuestion] = usePageState("market:question", "");
   const [analysis, setAnalysis] = usePageState("market:analysis", "");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -44,6 +83,10 @@ export default function MarketPage() {
   const [technicals, setTechnicals] = usePageState<MarketTechnicals | null>("market:technicals", null);
   const [sentiment, setSentiment] = usePageState<MarketSentiment | null>("market:sentiment", null);
   const [isMetricsLoading, setIsMetricsLoading] = useState(false);
+  const [isChartLoading, setIsChartLoading] = useState(false);
+
+  const timelineConfig = TIMELINE_OPTIONS[selectedTimeline] || TIMELINE_OPTIONS["1D"];
+  const showTradingView = selectedInstrument ? hasTradingViewSymbol(selectedInstrument) : false;
 
   useEffect(() => {
     if (!selectedInstrument && availableInstruments.length > 0) {
@@ -59,7 +102,7 @@ export default function MarketPage() {
       setIsMetricsLoading(true);
       try {
         const [techResp, sentResp] = await Promise.all([
-          api.getMarketTechnicals(selectedInstrument, "1h"),
+          api.getMarketTechnicals(selectedInstrument, timelineConfig.timeframe),
           api.getMarketSentiment(selectedInstrument),
         ]);
         if (!cancelled) {
@@ -84,7 +127,7 @@ export default function MarketPage() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [selectedInstrument]);
+  }, [selectedInstrument, timelineConfig.timeframe]);
 
   const handleAskAnalyst = async () => {
     if (!question.trim() || !selectedInstrument) return;
@@ -96,7 +139,7 @@ export default function MarketPage() {
         ? question.trim()
         : `${selectedInstrument}: ${question.trim()}`;
       const response = await api.askMarketAnalyst(prompt);
-      setAnalysis(response.answer + (response.disclaimer ? `\n\n⚠️ ${response.disclaimer}` : ""));
+      setAnalysis(response.answer + (response.disclaimer ? `\n\n${response.disclaimer}` : ""));
     } catch {
       setAnalysis("Unable to retrieve AI analysis right now. Please verify backend and API availability.");
     } finally {
@@ -109,6 +152,9 @@ export default function MarketPage() {
     return Math.max(0, Math.min(100, ((score + 1) / 2) * 100));
   }, [sentiment]);
 
+  const trendColor = technicals?.trend === "bullish" ? "text-profit" : technicals?.trend === "bearish" ? "text-loss" : "text-warning";
+  const trendArrow = technicals?.trend === "bullish" ? "\u25B2" : technicals?.trend === "bearish" ? "\u25BC" : "\u2014";
+
   return (
     <AppShell>
       <div className="p-6 md:p-10 space-y-8">
@@ -120,34 +166,83 @@ export default function MarketPage() {
           <DisclaimerBadge variant="banner" text="Educational analysis only. Not trading signals." className="max-w-xs" />
         </div>
 
-        <div className="flex items-center gap-0 border border-border rounded-md overflow-hidden w-fit flex-wrap">
-          {availableInstruments.map((symbol) => (
-            <button
-              key={symbol}
-              onClick={() => setSelectedInstrument(symbol)}
+        {/* Dropdown instrument selector */}
+        <div className="flex items-center gap-4">
+          <div className="relative">
+            <select
+              value={selectedInstrument}
+              onChange={(e) => setSelectedInstrument(e.target.value)}
               className={cn(
-                "px-5 py-3 text-sm font-medium tracking-wider mono-data transition-colors border-r border-border last:border-r-0 flex items-center gap-2.5",
-                selectedInstrument === symbol
-                  ? "bg-white text-black"
-                  : "bg-transparent text-muted hover:text-white hover:bg-surface"
+                "appearance-none bg-surface border border-border rounded-md pl-4 pr-10 py-3",
+                "text-sm text-white mono-data cursor-pointer",
+                "focus:outline-none focus:border-muted transition-colors",
+                "min-w-[200px]"
               )}
             >
-              <span className="text-base">{INSTRUMENT_ICONS[symbol] || "📊"}</span>
-              {symbol}
-            </button>
-          ))}
-          {availableInstruments.length === 0 && (
-            <span className="px-5 py-3 text-sm text-muted mono-data">No instruments available from backend.</span>
+              {availableInstruments.length === 0 && (
+                <option value="" disabled>No instruments available</option>
+              )}
+              {availableInstruments.map((symbol) => (
+                <option key={symbol} value={symbol}>{symbol}</option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted pointer-events-none" />
+          </div>
+
+          {selectedInstrument && (
+            <div className="flex items-center gap-2 px-4 py-2.5 bg-card border border-border rounded-md">
+              {getInstrumentIcon(selectedInstrument)}
+              <span className="text-sm font-medium text-white mono-data">{selectedInstrument}</span>
+            </div>
           )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2">
-            <PnLChart title={`${selectedInstrument || "MARKET"} PRICE CHART`} height={380} instrument={selectedInstrument || undefined} timeframe="1h" />
+          {/* Left: Chart + Timeline */}
+          <div className="lg:col-span-2 space-y-3">
+            {showTradingView ? (
+              <TradingViewWidget
+                symbol={selectedInstrument}
+                interval={selectedTimeline}
+                height={400}
+              />
+            ) : (
+              <PnLChart
+                title={`${selectedInstrument || "MARKET"} PRICE CHART`}
+                height={380}
+                instrument={selectedInstrument || undefined}
+                timeframe={timelineConfig.timeframe}
+                candles={timelineConfig.candles}
+                timeline={selectedTimeline}
+                onLoadingChange={setIsChartLoading}
+              />
+            )}
+
+            {/* Timeline buttons */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {TIMELINE_KEYS.map((tl) => (
+                <button
+                  key={tl}
+                  onClick={() => setSelectedTimeline(tl)}
+                  disabled={isChartLoading}
+                  className={cn(
+                    "px-3 py-1.5 rounded text-xs font-medium mono-data transition-colors",
+                    selectedTimeline === tl
+                      ? "bg-white text-black"
+                      : "bg-surface text-muted hover:text-white hover:bg-surface/80",
+                    isChartLoading && "opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  {tl}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="space-y-5">
-            <div className="bg-card border border-border rounded-md p-6">
+          {/* Right sidebar: constrained height */}
+          <div className="flex flex-col gap-5 lg:max-h-[540px]">
+            {/* Technical Indicators -- fixed size */}
+            <div className="bg-card border border-border rounded-md p-6 shrink-0">
               <h3 className="text-sm font-semibold tracking-wider text-muted uppercase mono-data mb-5">TECHNICAL INDICATORS</h3>
               {isMetricsLoading ? (
                 <div className="flex items-center gap-2 text-xs text-muted mono-data"><LoadingDots /> Loading indicators...</div>
@@ -187,11 +282,32 @@ export default function MarketPage() {
               )}
             </div>
 
-            <DataCard title="TREND" value={(technicals?.trend || "neutral").toUpperCase()} trend={technicals?.trend === "bullish" ? "up" : technicals?.trend === "bearish" ? "down" : "neutral"} glow>
-              <p className="text-[10px] text-muted mt-1">{technicals?.summary || "No technical summary available."}</p>
-            </DataCard>
+            {/* Trend + Insights -- scrollable */}
+            <div className="bg-card border border-border rounded-md p-6 flex-1 min-h-0 flex flex-col">
+              <div className="flex items-center justify-between mb-3 shrink-0">
+                <h3 className="text-sm font-semibold tracking-wider text-muted uppercase mono-data">TREND</h3>
+                <div className="flex items-center gap-2">
+                  <span className={cn("text-lg font-bold", trendColor)}>{trendArrow}</span>
+                  <span className={cn("text-sm font-semibold mono-data", trendColor)}>
+                    {(technicals?.trend || "neutral").toUpperCase()}
+                  </span>
+                </div>
+              </div>
+              <p className="text-[10px] text-muted mono-data mb-3 shrink-0">{technicals?.summary || "No technical summary available."}</p>
+              {technicals?.insights && technicals.insights.length > 0 && (
+                <div className="overflow-y-auto flex-1 min-h-0 space-y-2 pr-1">
+                  {technicals.insights.map((insight, i) => (
+                    <div key={i} className="flex gap-2 text-[10px] leading-relaxed mono-data text-muted-foreground">
+                      <span className={cn("mt-0.5 shrink-0", i === 0 ? trendColor : "text-zinc-500")}>&#x25CF;</span>
+                      <span>{insight}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
-            <DataCard title="SENTIMENT" value={`${Math.round(sentimentPercent)}/100`} subtitle={sentiment?.sentiment || "neutral"} trend={sentimentPercent >= 50 ? "up" : "down"}>
+            {/* Sentiment -- fixed size */}
+            <DataCard title="SENTIMENT" value={`${Math.round(sentimentPercent)}/100`} subtitle={sentiment?.sentiment || "neutral"} trend={sentimentPercent >= 50 ? "up" : "down"} className="shrink-0">
               <div className="w-full bg-surface rounded-full h-1.5 mt-2">
                 <div
                   className={cn("h-1.5 rounded-full transition-all duration-500", sentimentPercent >= 50 ? "bg-profit" : "bg-loss")}
