@@ -144,6 +144,13 @@ def route_query(
             '',
             final_response,
             flags=re.DOTALL,
+        )
+        # Strip <think>...</think> reasoning tags that DeepSeek may include
+        final_response = re.sub(
+            r'<think>.*?</think>',
+            '',
+            final_response,
+            flags=re.DOTALL,
         ).strip()
         if not final_response:
             final_response = (

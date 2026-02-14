@@ -4,6 +4,7 @@ Routes messages to AI agents via DeepSeek function calling.
 Supports: streaming responses, market alert push, narrator push.
 """
 import json
+import asyncio
 from urllib.parse import parse_qs
 from channels.generic.websocket import AsyncWebsocketConsumer
 from asgiref.sync import sync_to_async
@@ -73,8 +74,19 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "agent_type": resolved_type,
         }))
 
-        # Phase 2: route query (tool calls happen here, synchronously)
-        result = await sync_to_async(self._route_message)(user_message, resolved_type, user_id)
+        try:
+            # Phase 2: route query (tool calls happen here, synchronously)
+            result = await sync_to_async(self._route_message)(user_message, resolved_type, user_id)
+        except Exception as exc:
+            # Send error as stream_done so the frontend resets properly
+            await self.send(text_data=json.dumps({
+                "type": "stream_done",
+                "full_content": f"Sorry, an error occurred while processing your request: {exc}",
+                "agent_type": resolved_type,
+                "tools_used": [],
+            }))
+            return
+
         tools_used = result.get("tools_used", [])
 
         if tools_used:
@@ -98,11 +110,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     "type": "stream_chunk",
                     "content": chunk,
                 }))
+                await asyncio.sleep(0.02)
 
         # Phase 4: done
         await self.send(text_data=json.dumps({
             "type": "stream_done",
-            "full_content": response_text,
+            "full_content": response_text or "I couldn't process that request. Please try again.",
             "agent_type": result.get("source", "unknown"),
             "tools_used": tools_used,
         }))

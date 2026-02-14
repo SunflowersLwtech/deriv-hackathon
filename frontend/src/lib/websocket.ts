@@ -13,6 +13,7 @@ export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "er
 export interface WebSocketMessage {
   type: string;
   content?: string;
+  description?: string;
   data?: Record<string, unknown>;
   timestamp?: string;
   // Stream fields
@@ -131,7 +132,7 @@ export class TradeIQWebSocket {
         status: (parsed.status as StreamStatus["status"]) || "thinking",
         agent_type: parsed.agent_type,
         tools_used: parsed.tools_used,
-        description: parsed.content,
+        description: parsed.description || parsed.content,
       };
       this.streamStatusHandlers.forEach((h) => h(ss));
       return;
