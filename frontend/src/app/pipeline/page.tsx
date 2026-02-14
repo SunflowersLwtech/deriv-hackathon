@@ -335,6 +335,27 @@ export default function PipelinePage() {
                   content={result.market_commentary.post}
                 />
 
+                {/* Image Preview */}
+                {result.market_commentary.image_url && (
+                  <div className="mt-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs text-muted-foreground uppercase tracking-wider mono-data">
+                        ATTACHED IMAGE
+                      </span>
+                      {result.market_commentary.image_type && (
+                        <span className="text-[10px] text-cyan bg-cyan/10 px-2 py-0.5 rounded-sm mono-data">
+                          {result.market_commentary.image_type}
+                        </span>
+                      )}
+                    </div>
+                    <img
+                      src={result.market_commentary.image_url}
+                      alt="Market commentary image"
+                      className="w-full rounded-md border border-border object-cover max-h-96"
+                    />
+                  </div>
+                )}
+
                 <div className="flex flex-wrap gap-2 mt-4">
                   {result.market_commentary.hashtags.map((tag, i) => (
                     <span
