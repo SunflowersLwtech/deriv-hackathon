@@ -17,7 +17,13 @@
 </p>
 
 <p align="center">
-  <a href="https://deepwiki.com/SunflowersLwtech/deriv-hackathon"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
+  <a href="https://deepwiki.com/SunflowersLwtech/TradeIQ"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
+</p>
+
+<p align="center">
+  <a href="https://tradeiq-frontend-42g3.onrender.com">Live Demo</a> |
+  <a href="https://tradeiq-backend-42g3.onrender.com/api/">API</a> |
+  <a href="https://tradeiq-backend-42g3.onrender.com/api/demo/health/">Health Check</a>
 </p>
 
 ---
@@ -113,8 +119,8 @@ AI-generated narrative explains *exactly* which behavior patterns cost you money
 
 ```bash
 # Clone and setup
-git clone https://github.com/SunflowersLwtech/deriv-hackathon.git
-cd "deriv hackathon"
+git clone https://github.com/SunflowersLwtech/TradeIQ.git
+cd TradeIQ
 cp .env.example .env          # Fill in your API keys
 
 # Backend
