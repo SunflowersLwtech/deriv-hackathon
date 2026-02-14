@@ -28,13 +28,6 @@ export default function ChatPanel() {
     scrollToBottom();
   }, [messages, streamingMessage, scrollToBottom]);
 
-  // Auto-resize textarea to fit content (max 5 rows)
-  useEffect(() => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    ta.style.height = "auto";
-    ta.style.height = Math.min(ta.scrollHeight, 120) + "px"; // 120px ≈ 5 rows
-  }, [input]);
 
   const handleSend = () => {
     if (!input.trim() || streamStatus !== "idle") return;
@@ -92,7 +85,7 @@ export default function ChatPanel() {
       </div>
 
       {/* Input Area */}
-      <div style={{ padding: '24px 24px 32px' }} className="border-t border-white/10 bg-card/80 backdrop-blur-sm shrink-0">
+      <div style={{ padding: '24px 24px 56px' }} className="border-t border-white/10 bg-card/80 backdrop-blur-sm shrink-0">
         <div className="flex gap-3 items-stretch" style={{ height: '52px' }}>
           <button
             onClick={clearHistory}
@@ -115,10 +108,10 @@ export default function ChatPanel() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={isProcessing ? "Waiting for response..." : "Ask about markets, behavior, or content..."}
+            placeholder=""
             rows={1}
             disabled={isProcessing}
-            style={{ fontSize: '18px', color: '#ffffff', borderColor: '#ffffff55' }}
+            style={{ fontSize: '18px', color: '#ffffff', borderColor: '#ffffff55', height: '52px', overflowY: 'auto' }}
             className={cn(
               "flex-1 bg-white/[0.08] border rounded-xl px-5",
               "placeholder:text-white",
