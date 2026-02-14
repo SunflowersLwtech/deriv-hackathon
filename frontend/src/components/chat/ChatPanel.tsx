@@ -92,20 +92,21 @@ export default function ChatPanel() {
       </div>
 
       {/* Input Area */}
-      <div className="border-t border-border bg-card/50 p-4 shrink-0">
-        <div className="flex gap-2.5 items-end">
+      <div style={{ padding: '24px 24px 32px' }} className="border-t border-white/10 bg-card/80 backdrop-blur-sm shrink-0">
+        <div className="flex gap-3 items-stretch" style={{ height: '52px' }}>
           <button
             onClick={clearHistory}
             disabled={isProcessing || messages.length <= 1}
             title="Clear conversation"
+            style={{ width: '52px', color: '#ffffff', borderColor: '#ffffff55' }}
             className={cn(
-              "p-2.5 rounded-lg transition-all duration-200 shrink-0",
+              "flex items-center justify-center rounded-xl transition-all duration-200 shrink-0 border",
               !isProcessing && messages.length > 1
-                ? "text-muted-foreground hover:text-loss hover:bg-loss/10"
-                : "text-muted-foreground/30 cursor-not-allowed"
+                ? "hover:text-loss hover:bg-loss/10"
+                : "cursor-not-allowed"
             )}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 6h18" /><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2" /><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
             </svg>
           </button>
@@ -117,10 +118,11 @@ export default function ChatPanel() {
             placeholder={isProcessing ? "Waiting for response..." : "Ask about markets, behavior, or content..."}
             rows={1}
             disabled={isProcessing}
+            style={{ fontSize: '18px', color: '#ffffff', borderColor: '#ffffff55' }}
             className={cn(
-              "flex-1 bg-surface border border-border rounded-lg px-4 py-2.5",
-              "text-sm text-white placeholder:text-muted-foreground/50 mono-data",
-              "focus:outline-none focus:border-accent/40 focus:ring-1 focus:ring-accent/20 resize-none",
+              "flex-1 bg-white/[0.08] border rounded-xl px-5",
+              "placeholder:text-white",
+              "focus:outline-none focus:border-accent/50 focus:ring-2 focus:ring-accent/20 resize-none",
               "transition-all duration-200",
               isProcessing && "opacity-50 cursor-not-allowed"
             )}
@@ -128,20 +130,18 @@ export default function ChatPanel() {
           <button
             onClick={handleSend}
             disabled={!input.trim() || isProcessing}
+            style={{ fontSize: '16px', color: input.trim() && !isProcessing ? '#000000' : '#ffffff', backgroundColor: input.trim() && !isProcessing ? '#ffffff' : 'rgba(255,255,255,0.15)', borderColor: '#ffffff55' }}
             className={cn(
-              "px-4 py-2.5 rounded-lg text-xs font-semibold tracking-wider mono-data",
+              "px-7 rounded-xl font-bold tracking-wider flex items-center justify-center border",
               "transition-all duration-200",
               input.trim() && !isProcessing
-                ? "bg-white text-black hover:bg-gray-200 active:scale-[0.97]"
-                : "bg-border/50 text-muted-foreground/50 cursor-not-allowed"
+                ? "hover:bg-gray-200 active:scale-[0.97]"
+                : "cursor-not-allowed"
             )}
           >
             {isProcessing ? "..." : "SEND"}
           </button>
         </div>
-        <p className="text-[10px] text-muted-foreground/30 mt-2 mono-data text-center">
-          AI analysis only &middot; Not financial advice &middot; DYOR
-        </p>
       </div>
     </div>
   );
