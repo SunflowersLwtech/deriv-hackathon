@@ -27,6 +27,7 @@ const TIMEOUT_TECHNICALS = 20_000;  // Deriv WS history + computation
 const TIMEOUT_ANALYSIS = 25_000;    // pattern analysis + LLM nudge
 const TIMEOUT_LLM = 30_000;        // LLM reasoning / sentiment
 const TIMEOUT_BRIEF = 45_000;      // parallel Deriv WS + LLM summary
+const TIMEOUT_AUTH = 45_000;       // OAuth callbacks (Render cold starts can exceed 15s)
 const TIMEOUT_PIPELINE = 90_000;   // full 5-agent pipeline (Monitor→Analyst→Advisor→Sentinel→Content)
 
 interface ApiOptions {
@@ -547,6 +548,7 @@ class ApiClient {
       method: "POST",
       body: { accounts },
       requiresAuth: true,
+      timeoutMs: TIMEOUT_AUTH,
     });
   }
 
