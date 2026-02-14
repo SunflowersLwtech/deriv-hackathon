@@ -128,6 +128,21 @@ cd frontend && npm ci && npm run dev
 
 Open **http://localhost:3000** (frontend) and **http://localhost:8000/api/** (backend).
 
+### After Pulling Latest Code
+
+```bash
+git pull origin <your-branch>
+
+# Frontend — install any new packages (e.g. katex, framer-motion)
+cd frontend && npm install && cd ..
+
+# Backend — install any new Python packages
+pip install -r backend/requirements.txt
+
+# Run migrations if models changed
+cd backend && python manage.py migrate && cd ..
+```
+
 ---
 
 ## Deploy on Render (Recommended for Demo)
