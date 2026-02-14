@@ -17,10 +17,11 @@ def generate_image_for_content(
     """
     Main orchestrator: classify content → generate appropriate image.
 
-    This is the primary entry point for image generation. It:
-    1. Classifies the content to determine image type
-    2. Generates either a chart or AI image based on classification
-    3. Returns comprehensive image metadata
+    Decision flow:
+      - If the post is about price movement AND we can fetch live chart
+        data from Deriv/Finnhub → generate a matplotlib chart.
+      - Otherwise → generate an AI image (Gemini) whose context matches
+        the post content.
 
     Args:
         content_text: The social media post text
@@ -28,77 +29,68 @@ def generate_image_for_content(
         persona_id: Persona ID for style preferences
 
     Returns:
-        {
-            "image_url": "http://localhost:8000/media/charts/BTC_20260214.png",
-            "image_path": "/full/path/to/image.png",
-            "image_alt_text": "BTC/USD chart showing 5% decline",
-            "image_type": "chart" | "ai_generated",
-            "classification_reasoning": "Content mentions specific price movement",
-            "classification_confidence": 0.95,
-            "generated_at": "2026-02-14T10:30:00Z",
-            "success": True
-        }
+        dict with image_url, image_path, image_alt_text, image_type, etc.
     """
     logger.info(f"Starting image generation for content: {content_text[:100]}...")
 
     try:
-        # Step 1: Classify content to determine image type
+        # Step 1: Classify content (also checks data availability)
         classification = classify_content_for_image(content_text, analysis_report)
+        image_type = classification["image_type"]
 
         logger.info(
-            f"Classification: {classification['image_type']} "
-            f"(confidence: {classification['confidence']:.2f})"
+            f"Classification: {image_type} "
+            f"(confidence: {classification['confidence']:.2f}) "
+            f"- {classification['reasoning']}"
         )
 
-        # Step 2: Generate appropriate image based on classification
-        if classification["image_type"] == "chart":
-            # Validate chart parameters before generating
-            chart_params = classification.get("chart_params")
-            if not chart_params or not chart_params.get("instrument"):
-                logger.warning("Chart selected but no valid instrument found. Falling back to AI image.")
+        # Step 2: Generate the appropriate image
+        if image_type == "chart":
+            chart_params = classification.get("chart_params", {})
+            instrument = chart_params.get("instrument")
+
+            # Fetch real-time price to use as current_price on the chart
+            try:
+                from market.tools import fetch_price_data
+                live_data = fetch_price_data(instrument)
+                if live_data and live_data.get("price"):
+                    chart_params["current_price"] = live_data["price"]
+                    logger.info(f"Live price for {instrument}: ${live_data['price']}")
+            except Exception as e:
+                logger.warning(f"Could not fetch live price for {instrument}: {e}")
+
+            image_result = _generate_chart_image(classification, analysis_report)
+
+            # If chart generation fails, fall back to AI image
+            if not image_result.get("success"):
+                logger.warning(
+                    f"Chart generation failed for {instrument}, "
+                    f"falling back to AI image: {image_result.get('error')}"
+                )
+                image_type = "ai_generated"
                 image_result = _generate_ai_image(content_text, persona_id)
-            else:
-                # Validate we can get real market data for this instrument
-                instrument = chart_params["instrument"]
-                logger.info(f"Validating market data availability for {instrument}")
-
-                try:
-                    from market.tools import fetch_price_data
-                    validation_data = fetch_price_data(instrument)
-
-                    if validation_data and validation_data.get("price"):
-                        logger.info(f"✓ Real market data available for {instrument}: ${validation_data['price']}")
-                        # Update chart params with real current price
-                        chart_params["current_price"] = validation_data["price"]
-                        image_result = _generate_chart_image(classification, analysis_report)
-                    else:
-                        logger.warning(f"✗ No real market data for {instrument}. Falling back to AI image.")
-                        image_result = _generate_ai_image(content_text, persona_id)
-                except Exception as e:
-                    logger.warning(f"✗ Market data validation failed for {instrument}: {e}. Using AI image.")
-                    image_result = _generate_ai_image(content_text, persona_id)
         else:
+            # Not about price movement, or instrument not chartable → AI image
             image_result = _generate_ai_image(content_text, persona_id)
 
-        # Step 3: Combine results
+        # Step 3: Build response
         if image_result.get("success"):
             return {
                 "image_url": image_result["image_url"],
                 "image_path": image_result["image_path"],
                 "image_alt_text": image_result["alt_text"],
-                "image_type": classification["image_type"],
+                "image_type": image_type,
                 "classification_reasoning": classification["reasoning"],
                 "classification_confidence": classification["confidence"],
                 "generated_at": datetime.now().isoformat(),
                 "success": True
             }
         else:
-            # Image generation failed
             logger.error(f"Image generation failed: {image_result.get('error')}")
             return {
                 "success": False,
                 "error": image_result.get("error", "Unknown error"),
-                "image_type": classification["image_type"],
+                "image_type": image_type,
                 "classification_reasoning": classification["reasoning"]
             }
 

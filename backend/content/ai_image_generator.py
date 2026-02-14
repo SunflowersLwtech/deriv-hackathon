@@ -262,7 +262,10 @@ def _build_image_prompt(
     style: str
 ) -> str:
     """
-    Build detailed image generation prompt based on content and style.
+    Build an image generation prompt that is contextually tied to the post.
+
+    The prompt captures the specific theme / mood / topic of the post so
+    that Gemini generates a visually relevant image (not a generic one).
 
     Args:
         content_text: The social media post text
@@ -272,16 +275,33 @@ def _build_image_prompt(
     Returns:
         Detailed image generation prompt
     """
-    # Extract key trading concepts from text
+    text_lower = content_text.lower()
+
+    # Detect specific concepts from the post content
     concepts = []
-    if any(word in content_text.lower() for word in ['bitcoin', 'btc', 'crypto']):
+    if any(w in text_lower for w in ['bitcoin', 'btc', 'crypto', 'blockchain']):
         concepts.append('cryptocurrency')
-    if any(word in content_text.lower() for word in ['forex', 'eur', 'usd', 'gbp']):
+    if any(w in text_lower for w in ['forex', 'eur', 'usd', 'gbp', 'currency']):
         concepts.append('forex trading')
-    if any(word in content_text.lower() for word in ['psychology', 'mindset', 'emotional']):
+    if any(w in text_lower for w in ['psychology', 'mindset', 'emotional', 'discipline', 'patience', 'fear', 'greed']):
         concepts.append('trading psychology')
-    if any(word in content_text.lower() for word in ['risk', 'management', 'strategy']):
+    if any(w in text_lower for w in ['risk', 'management', 'strategy', 'stop loss', 'position size']):
         concepts.append('risk management')
+    if any(w in text_lower for w in ['gold', 'silver', 'oil', 'commodity']):
+        concepts.append('commodities')
+    if any(w in text_lower for w in ['learn', 'education', 'tip', 'beginner', 'lesson']):
+        concepts.append('trading education')
+    if any(w in text_lower for w in ['bull', 'bear', 'rally', 'crash', 'volatile']):
+        concepts.append('market volatility')
+
+    # Detect sentiment / mood for visual tone
+    mood = "neutral"
+    if any(w in text_lower for w in ['crash', 'drop', 'loss', 'fear', 'bearish', 'fell']):
+        mood = "cautious, somber tones (deep blues, muted reds)"
+    elif any(w in text_lower for w in ['surge', 'rally', 'bullish', 'gain', 'profit', 'rise']):
+        mood = "optimistic, energetic tones (greens, golds, warm highlights)"
+    elif any(w in text_lower for w in ['patience', 'discipline', 'calm', 'steady']):
+        mood = "calm, zen-like serenity (soft gradients, cool blues)"
 
     # Style-specific prompt elements
     style_prompts = {
@@ -298,17 +318,21 @@ def _build_image_prompt(
 
     concept_str = ", ".join(concepts) if concepts else "trading and finance"
 
+    # Truncate post for the prompt (avoid exceeding token limits)
+    post_summary = content_text[:200].strip()
+
     prompt = f"""{style_prompts.get(style, style_prompts['professional'])}
 
+Post context: "{post_summary}"
 Subject: {concept_str}
-Theme: Financial markets and trading
-Composition: Horizontal 16:9 format (1200x675px ideal for social media)
-Elements: Modern, abstract representation avoiding specific text
+Visual mood: {mood}
+Composition: Horizontal 16:9 format, ideal for social media
+Elements: Modern, abstract representation that visually captures the theme of the post above
 Color scheme: Professional financial aesthetics
 Style: Flat design, minimal shadows, high contrast
 
 DO NOT include any text, numbers, or specific stock tickers in the image.
-Focus on abstract visual metaphors for {concept_str}."""
+Create an abstract visual that captures the essence and mood of the post context above."""
 
     return prompt
 

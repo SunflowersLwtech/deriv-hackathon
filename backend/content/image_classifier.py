@@ -1,10 +1,33 @@
 # backend/content/image_classifier.py - Content Classification for Image Type
 import logging
 import re
-from typing import Dict, Optional
+from typing import Dict, Optional, Set
 from agents.llm_client import get_llm_client
 
 logger = logging.getLogger("tradeiq.image_classifier")
+
+# Instruments we can actually fetch live data for (Deriv API + Finnhub)
+CHARTABLE_INSTRUMENTS: Set[str] = {
+    # Deriv + Finnhub forex
+    "EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "USD/CHF",
+    # Deriv precious metals
+    "GOLD", "XAU/USD", "SILVER",
+    # Deriv crypto
+    "BTC/USD", "ETH/USD",
+    # Deriv synthetic indices
+    "Volatility 75", "Volatility 100", "Volatility 10",
+}
+
+
+def is_instrument_chartable(instrument: str) -> bool:
+    """Check if we can fetch live chart data for this instrument."""
+    if not instrument:
+        return False
+    normalized = instrument.upper().strip()
+    for supported in CHARTABLE_INSTRUMENTS:
+        if normalized == supported.upper():
+            return True
+    return False
 
 
 def classify_content_for_image(
@@ -12,10 +35,12 @@ def classify_content_for_image(
     analysis_report: Optional[dict] = None
 ) -> dict:
     """
-    Classify if content needs chart vs AI-generated image.
+    Classify if content needs a live chart vs an AI-generated image.
 
-    Uses LLM to intelligently determine the best visual accompaniment
-    based on content type.
+    Decision logic:
+      1. Is this about price movement / charts?
+      2. Can we actually fetch live data for the instrument? (Deriv / Finnhub)
+      If BOTH yes → "chart".  Otherwise → "ai_generated".
 
     Args:
         content_text: The social media post text
@@ -24,31 +49,46 @@ def classify_content_for_image(
     Returns:
         {
             "image_type": "chart" | "ai_generated",
-            "confidence": 0.95,
-            "reasoning": "Content mentions specific price movement",
-            "chart_params": {
-                "instrument": "BTC/USD",
-                "current_price": 95000,
-                "change_pct": -5.2,
-                "highlight_event": "5% drop"
-            } | None
+            "confidence": float,
+            "reasoning": str,
+            "chart_params": dict | None
         }
     """
     try:
-        # Quick rule-based classification first (fast path)
+        # Step 1: Quick rule-based classification (fast path)
         quick_result = _quick_classify(content_text, analysis_report)
         if quick_result["confidence"] >= 0.9:
-            logger.info(f"Quick classification: {quick_result['image_type']} (confidence: {quick_result['confidence']})")
-            return quick_result
+            result = quick_result
+        else:
+            # Use LLM for ambiguous cases
+            result = _llm_classify(content_text, analysis_report)
 
-        # Use LLM for ambiguous cases
-        llm_result = _llm_classify(content_text, analysis_report)
-        logger.info(f"LLM classification: {llm_result['image_type']} (confidence: {llm_result['confidence']})")
-        return llm_result
+        # Step 2: If classified as chart, verify we can actually fetch the data
+        if result["image_type"] == "chart":
+            chart_params = result.get("chart_params")
+            instrument = chart_params.get("instrument") if chart_params else None
+
+            if not instrument or not is_instrument_chartable(instrument):
+                logger.info(
+                    f"Content is about price movement but instrument "
+                    f"'{instrument}' is not chartable (no live data source). "
+                    f"Falling back to AI image."
+                )
+                result["image_type"] = "ai_generated"
+                result["reasoning"] = (
+                    f"Price movement detected but no live data available for "
+                    f"'{instrument or 'unknown'}'. Using AI image instead."
+                )
+                result["chart_params"] = None
+
+        logger.info(
+            f"Classification: {result['image_type']} "
+            f"(confidence: {result['confidence']:.2f})"
+        )
+        return result
 
     except Exception as e:
         logger.error(f"Classification failed: {e}")
-        # Default to AI-generated image on error
         return {
             "image_type": "ai_generated",
             "confidence": 0.5,
