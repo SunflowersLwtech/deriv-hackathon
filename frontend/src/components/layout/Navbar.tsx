@@ -95,78 +95,74 @@ export default function Navbar() {
   };
 
   return (
-    <nav className="glass sticky top-0 z-50 border-b border-border">
-      <div className="flex items-center justify-between px-6 h-[60px]">
-        {/* Logo */}
-        <Link href="/" className="flex items-center gap-3 shrink-0">
-          <div className="relative">
-            <Image
-              src="/tradeiq_favicon.svg"
-              alt="TradeIQ"
-              width={36}
-              height={36}
-              className="rounded-md"
-              priority
-            />
-            <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-profit animate-pulse" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-white font-bold text-base tracking-wider">TradeIQ</span>
-            <span className="text-muted text-[10px] tracking-widest uppercase">AI Analyst</span>
-          </div>
+    <nav className="sticky top-0 z-50 bg-[#131722] border-b border-[#2a2e39]">
+      <div className="flex items-center h-[52px] px-6 lg:px-10">
+        {/* Left: Logo */}
+        <Link href="/" className="flex items-center gap-2.5 shrink-0">
+          <Image
+            src="/tradeiq_favicon.svg"
+            alt="TradeIQ"
+            width={28}
+            height={28}
+            className="rounded"
+            priority
+          />
+          <span className="text-white font-bold text-[16px] tracking-tight">
+            TradeIQ
+          </span>
         </Link>
 
-        {/* Desktop Nav Links */}
-        <div className="hidden md:flex items-center gap-1">
-          {navLinks.map((link, i) => (
-            <div key={link.href} className="flex items-center">
-              {i > 0 && <span className="text-border mx-1.5">|</span>}
-              <Link
-                href={link.href}
-                className={cn(
-                  "px-4 py-2 text-sm font-medium tracking-wider transition-colors mono-data rounded-sm",
-                  pathname === link.href
-                    ? "text-white bg-surface"
-                    : "text-muted hover:text-white hover:bg-surface/50"
-                )}
-              >
-                {link.label}
-              </Link>
-            </div>
+        {/* Center: Desktop Nav Links */}
+        <div className="hidden md:flex items-center justify-center flex-1 gap-6">
+          {navLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className={cn(
+                "px-4 py-1.5 text-[14px] transition-colors rounded-sm",
+                pathname === link.href
+                  ? "text-[#2962ff] font-semibold"
+                  : "text-[#787b86] font-normal hover:text-[#d1d4dc]"
+              )}
+            >
+              {link.label}
+            </Link>
           ))}
         </div>
 
-        {/* Right Section */}
-        <div className="flex items-center gap-4">
-          <div className="hidden sm:flex items-center gap-2">
+        {/* Right: Live Status + Auth + Mobile Toggle */}
+        <div className="flex items-center gap-4 shrink-0 ml-auto md:ml-0">
+          <div className="hidden sm:flex items-center gap-1.5">
             <div className="live-dot" />
-            <span className="text-xs text-profit tracking-wider mono-data">LIVE</span>
+            <span className="text-[12px] text-[#26a69a] font-medium">
+              LIVE
+            </span>
           </div>
 
           {isAuthLoading ? (
-            <span className="px-4 py-2 text-xs font-medium tracking-wider text-muted border border-border rounded-md mono-data">
-              AUTH...
+            <span className="px-3 py-1.5 text-[13px] font-medium text-[#787b86]">
+              ...
             </span>
           ) : session ? (
             <div className="flex items-center gap-3">
-              <span className="hidden lg:inline-block text-xs text-muted mono-data">
+              <span className="hidden lg:inline-block text-[13px] text-[#787b86] font-medium">
                 {displayName}
               </span>
               <button
                 onClick={handleSignOut}
                 disabled={isSigningOut}
-                className="px-4 py-2 text-xs font-medium tracking-wider text-white bg-surface hover:bg-surface-hover transition-colors rounded-md border border-border disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-1.5 text-[13px] font-medium text-[#d1d4dc] hover:text-white border border-[#2a2e39] hover:border-[#363a45] transition-colors rounded disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isSigningOut ? "SIGNING OUT..." : "SIGN OUT"}
+                {isSigningOut ? "Signing out..." : "Sign Out"}
               </button>
             </div>
           ) : (
             <Link
               href="/login"
-              className="px-4 py-2 text-xs font-medium tracking-wider text-black bg-white hover:bg-gray-200 transition-colors rounded-md flex items-center gap-1.5"
+              className="px-5 py-[7px] text-[13px] font-semibold text-white bg-[#2962ff] hover:bg-[#1e53e5] transition-colors rounded flex items-center gap-1.5"
             >
-              SIGN IN
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              Get Started
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <path d="M7 17L17 7M17 7H7M17 7V17" />
               </svg>
             </Link>
@@ -175,7 +171,7 @@ export default function Navbar() {
           {/* Mobile menu button */}
           <button
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="md:hidden p-2 text-muted hover:text-white transition-colors"
+            className="md:hidden p-1.5 text-[#787b86] hover:text-[#d1d4dc] transition-colors"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               {isMobileMenuOpen ? (
@@ -190,17 +186,17 @@ export default function Navbar() {
 
       {/* Mobile Menu */}
       {isMobileMenuOpen && (
-        <div className="md:hidden border-t border-border animate-fade-in">
+        <div className="md:hidden border-t border-[#2a2e39] bg-[#1e222d] animate-fade-in">
           {navLinks.map((link) => (
             <Link
               key={link.href}
               href={link.href}
               onClick={() => setIsMobileMenuOpen(false)}
               className={cn(
-                "block px-5 py-3.5 text-sm font-medium tracking-wider mono-data border-b border-border/50",
+                "block px-6 py-3 text-[14px] font-medium border-b border-[#2a2e39]/50 transition-colors",
                 pathname === link.href
-                  ? "text-white bg-surface"
-                  : "text-muted hover:text-white hover:bg-surface"
+                  ? "text-[#2962ff]"
+                  : "text-[#787b86] hover:text-[#d1d4dc] hover:bg-[#252a37]"
               )}
             >
               {link.label}

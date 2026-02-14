@@ -1,24 +1,24 @@
 @import "tailwindcss";
 
 @theme inline {
-  --color-background: #000000;
-  --color-foreground: #ffffff;
-  --color-muted: #a1a1aa;
-  --color-muted-foreground: #71717a;
-  --color-border: #27272a;
-  --color-card: #0a0a0a;
-  --color-card-hover: #111111;
-  --color-surface: #141414;
-  --color-surface-hover: #1a1a1a;
-  --color-profit: #4ade80;
-  --color-profit-dim: #22c55e;
-  --color-loss: #f87171;
-  --color-loss-dim: #ef4444;
-  --color-accent: #3b82f6;
-  --color-accent-dim: #2563eb;
-  --color-warning: #fbbf24;
-  --color-cyan: #22d3ee;
-  --color-neon: #00ff00;
+  --color-background: #131722;
+  --color-foreground: #d1d4dc;
+  --color-muted: #787b86;
+  --color-muted-foreground: #5d606b;
+  --color-border: #2a2e39;
+  --color-card: #1e222d;
+  --color-card-hover: #252a37;
+  --color-surface: #1e222d;
+  --color-surface-hover: #2a2e39;
+  --color-profit: #26a69a;
+  --color-profit-dim: #1b8a7a;
+  --color-loss: #ef5350;
+  --color-loss-dim: #d32f2f;
+  --color-accent: #2962ff;
+  --color-accent-dim: #1e53e5;
+  --color-warning: #ff9800;
+  --color-cyan: #00bcd4;
+  --color-neon: #00e676;
   --font-mono: var(--font-jetbrains), "JetBrains Mono", "Fira Code", "SF Mono", ui-monospace, monospace;
   --font-sans: var(--font-inter), "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
@@ -35,8 +35,8 @@ html {
 }
 
 body {
-  background: #000000;
-  color: #ffffff;
+  background: #131722;
+  color: #d1d4dc;
   font-family: var(--font-inter), "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -52,16 +52,16 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #000000;
+  background: #131722;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #27272a;
+  background: #2a2e39;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3f3f46;
+  background: #363a45;
 }
 
 /* Number rolling animation */
@@ -103,7 +103,7 @@ body {
 
 @keyframes flash-green {
   0% {
-    background-color: rgba(74, 222, 128, 0.3);
+    background-color: rgba(38, 166, 154, 0.25);
   }
   100% {
     background-color: transparent;
@@ -112,7 +112,7 @@ body {
 
 @keyframes flash-red {
   0% {
-    background-color: rgba(248, 113, 113, 0.3);
+    background-color: rgba(239, 83, 80, 0.25);
   }
   100% {
     background-color: transparent;
@@ -172,14 +172,13 @@ body {
 
 /* Glassmorphism */
 .glass {
-  background: rgba(10, 10, 10, 0.8);
+  background: #131722;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(39, 39, 42, 0.5);
 }
 
 .glass-light {
-  background: rgba(20, 20, 20, 0.6);
+  background: rgba(30, 34, 45, 0.85);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
@@ -193,15 +192,15 @@ body {
 
 /* Glow effects */
 .glow-green {
-  text-shadow: 0 0 10px rgba(74, 222, 128, 0.5), 0 0 20px rgba(74, 222, 128, 0.3);
+  text-shadow: 0 0 10px rgba(38, 166, 154, 0.4), 0 0 20px rgba(38, 166, 154, 0.2);
 }
 
 .glow-red {
-  text-shadow: 0 0 10px rgba(248, 113, 113, 0.5), 0 0 20px rgba(248, 113, 113, 0.3);
+  text-shadow: 0 0 10px rgba(239, 83, 80, 0.4), 0 0 20px rgba(239, 83, 80, 0.2);
 }
 
 .glow-blue {
-  text-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+  text-shadow: 0 0 10px rgba(41, 98, 255, 0.4);
 }
 
 /* Card hover effect */
@@ -210,23 +209,22 @@ body {
 }
 
 .card-hover:hover {
-  background: #111111;
-  border-color: #3f3f46;
+  background: #252a37;
+  border-color: #363a45;
 }
 
 /* Live indicator */
 .live-dot {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: #4ade80;
-  box-shadow: 0 0 8px rgba(74, 222, 128, 0.6);
+  background: #26a69a;
   animation: pulse-green 2s infinite;
 }
 
 /* Selection styling */
 ::selection {
-  background: rgba(59, 130, 246, 0.3);
+  background: rgba(41, 98, 255, 0.3);
   color: #ffffff;
 }
 
