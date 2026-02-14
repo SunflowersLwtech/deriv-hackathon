@@ -173,7 +173,7 @@ export default function PipelinePage() {
                 </div>
 
                 {/* Market context row */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-4">
                   <MiniStat
                     label="Magnitude"
                     value={result.volatility_event.magnitude.toUpperCase()}
@@ -207,17 +207,19 @@ export default function PipelinePage() {
                           : "text-white"
                     }
                   />
-                  <MiniStat
-                    label="Trend"
-                    value={String(result.volatility_event.raw_data?.trend ?? "neutral").toUpperCase()}
-                    color={
-                      result.volatility_event.raw_data?.trend === "bullish"
-                        ? "text-profit"
-                        : result.volatility_event.raw_data?.trend === "bearish"
-                          ? "text-loss"
-                          : "text-white"
-                    }
-                  />
+                  <div className="md:col-span-2 md:text-right">
+                    <MiniStat
+                      label="Trend"
+                      value={String(result.volatility_event.raw_data?.trend ?? "neutral").toUpperCase()}
+                      color={
+                        result.volatility_event.raw_data?.trend === "bullish"
+                          ? "text-profit"
+                          : result.volatility_event.raw_data?.trend === "bearish"
+                            ? "text-loss"
+                            : "text-white"
+                      }
+                    />
+                  </div>
                 </div>
               </ResultCard>
             )}
@@ -597,13 +599,16 @@ function ResultCard({
 }) {
   return (
     <div className={cn("bg-card border rounded-md p-6", borderColor)}>
-      <div className="flex items-center gap-2.5 mb-5">
-        <span className="text-lg">{icon}</span>
-        <h3 className="text-sm font-semibold tracking-wider text-muted uppercase mono-data">
+      {/* Keep a fixed icon column so the header and body align. */}
+      <div className="grid grid-cols-[1.5rem,1fr] gap-x-3 gap-y-5">
+        <div className="flex h-6 w-6 items-center justify-center text-lg leading-none">
+          {icon}
+        </div>
+        <h3 className="self-center text-sm font-semibold tracking-wider text-muted uppercase mono-data">
           {title}
         </h3>
+        <div className="col-start-2">{children}</div>
       </div>
-      {children}
     </div>
   );
 }

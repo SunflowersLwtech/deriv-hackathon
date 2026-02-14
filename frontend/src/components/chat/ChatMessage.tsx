@@ -343,25 +343,17 @@ export default function ChatMessage({
   const isUser = message.role === "user";
   const isNudge = message.type === "nudge";
   const isDisclaimer = message.type === "disclaimer";
-
-  /* ── typewriter state ── */
-  const [displayedText, setDisplayedText] = useState("");
-  const [showCursor, setShowCursor] = useState(false);
-  const hasAnimatedRef = useRef(false);
   const isAssistant = !isUser && !isNudge && !isDisclaimer;
 
+  /* ── typewriter state ── */
+  const shouldAnimate = isAssistant && !isStreaming && !message.skipAnimation;
+  const [displayedText, setDisplayedText] = useState(() => (shouldAnimate ? "" : message.content));
+  const [showCursor, setShowCursor] = useState(() => shouldAnimate);
+  const hasAnimatedRef = useRef(false);
+
   useEffect(() => {
-    if (message.skipAnimation) {
-      setDisplayedText(message.content);
-      hasAnimatedRef.current = true;
-      return;
-    }
-    if (!isAssistant || hasAnimatedRef.current || isStreaming) {
-      if (!hasAnimatedRef.current && !isStreaming) setDisplayedText(message.content);
-      return;
-    }
+    if (!shouldAnimate || hasAnimatedRef.current) return;
     hasAnimatedRef.current = true;
-    setShowCursor(true);
     const text = message.content;
     let idx = 0;
     const interval = setInterval(() => {
@@ -370,11 +362,7 @@ export default function ChatMessage({
       if (idx >= text.length) { clearInterval(interval); setShowCursor(false); }
     }, 12);
     return () => clearInterval(interval);
-  }, [message.content, isAssistant, isStreaming, message.skipAnimation]);
-
-  useEffect(() => {
-    if (!isAssistant) setDisplayedText(message.content);
-  }, [isAssistant, message.content]);
+  }, [message.content, shouldAnimate]);
 
   /* ── disclaimer type ── */
   if (isDisclaimer) {
@@ -387,8 +375,8 @@ export default function ChatMessage({
     );
   }
 
-  const textToRender = isStreaming ? (streamingContent || "") : displayedText;
-  const cursorVisible = isStreaming || showCursor;
+  const textToRender = isStreaming ? (streamingContent || "") : (shouldAnimate ? displayedText : message.content);
+  const cursorVisible = isStreaming || (shouldAnimate && showCursor);
 
   /* ── user message ── */
   if (isUser) {

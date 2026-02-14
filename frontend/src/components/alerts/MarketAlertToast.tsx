@@ -10,20 +10,20 @@ interface MarketAlertToastProps {
 }
 
 export default function MarketAlertToast({ alert, onDismiss }: MarketAlertToastProps) {
-  const [visible, setVisible] = useState(false);
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
+  const alertKey = alert ? `${alert.instrument}:${alert.timestamp}` : null;
 
   useEffect(() => {
-    if (alert) {
-      setVisible(true);
-      const timer = setTimeout(() => {
-        setVisible(false);
-        onDismiss?.();
-      }, 8000);
-      return () => clearTimeout(timer);
-    }
-  }, [alert, onDismiss]);
+    if (!alertKey) return;
+    const timer = setTimeout(() => {
+      setDismissedKey(alertKey);
+      onDismiss?.();
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [alertKey, onDismiss]);
 
-  if (!alert || !visible) return null;
+  const isVisible = Boolean(alertKey) && dismissedKey !== alertKey;
+  if (!alert || !isVisible) return null;
 
   const isUp = alert.direction === "spike";
   const color = isUp ? "text-profit" : "text-loss";
@@ -50,7 +50,10 @@ export default function MarketAlertToast({ alert, onDismiss }: MarketAlertToastP
           </span>
         </div>
         <button
-          onClick={() => { setVisible(false); onDismiss?.(); }}
+          onClick={() => {
+            if (alertKey) setDismissedKey(alertKey);
+            onDismiss?.();
+          }}
           className="text-muted-foreground hover:text-white text-xs"
         >
           x

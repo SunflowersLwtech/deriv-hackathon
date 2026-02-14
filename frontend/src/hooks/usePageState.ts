@@ -16,7 +16,7 @@ export function usePageState<T>(key: string, initial: T): [T, Dispatch<SetStateA
   const initialRef = useRef(initial);
 
   const [value, setValueRaw] = useState<T>(() =>
-    _pageCache.has(key) ? (_pageCache.get(key) as T) : initialRef.current,
+    _pageCache.has(key) ? (_pageCache.get(key) as T) : initial,
   );
 
   const setValue: Dispatch<SetStateAction<T>> = useCallback(
