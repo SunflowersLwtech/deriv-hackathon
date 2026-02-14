@@ -29,7 +29,7 @@ export default function TradingTwinChart({
   const { twinData, isLoading, error, generateTwin } = useTradingTwin(userId);
   const [days, setDays] = useState(30);
   const [animatedDiff, setAnimatedDiff] = useState(0);
-  const animRef = useRef<ReturnType<typeof requestAnimationFrame>>();
+  const animRef = useRef<ReturnType<typeof requestAnimationFrame>>(undefined);
 
   // Count-up animation for difference
   useEffect(() => {
@@ -276,10 +276,10 @@ export default function TradingTwinChart({
                 borderRadius: 8,
                 fontSize: 11,
               }}
-              formatter={(value: number, name: string) => [
-                `$${value.toLocaleString()}`,
-                name === "disciplined" ? "Disciplined You" : "Impulsive You",
-              ]}
+              formatter={((value: number | undefined, name: string | undefined) => [
+                `$${(value ?? 0).toLocaleString()}`,
+                (name ?? "") === "disciplined" ? "Disciplined You" : "Impulsive You",
+              ]) as never}
             />
             <Area
               type="monotone"

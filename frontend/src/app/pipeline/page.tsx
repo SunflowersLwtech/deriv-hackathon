@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import AppShell from "@/components/layout/AppShell";
 import { cn } from "@/lib/utils";
+import { usePageState } from "@/hooks/usePageState";
 import api, {
   type PipelineResponse,
   type CustomEvent,
@@ -35,24 +36,22 @@ const DEMO_PORTFOLIO: PortfolioPosition[] = [
   { instrument: "Volatility 100", direction: "short", size: 0.5, entry_price: 1500000, pnl: -35.0 },
 ];
 
+const IDLE_STAGES: StageState = {
+  monitor: "idle", analyst: "idle", advisor: "idle", sentinel: "idle", content: "idle",
+};
+
 export default function PipelinePage() {
-  const [stages, setStages] = useState<StageState>({
-    monitor: "idle",
-    analyst: "idle",
-    advisor: "idle",
-    sentinel: "idle",
-    content: "idle",
-  });
-  const [result, setResult] = useState<PipelineResponse | null>(null);
+  const [stages, setStages] = usePageState<StageState>("pipeline:stages", { ...IDLE_STAGES });
+  const [result, setResult] = usePageState<PipelineResponse | null>("pipeline:result", null);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<"auto" | "manual">("manual");
+  const [mode, setMode] = usePageState<"auto" | "manual">("pipeline:mode", "manual");
 
   const resetState = useCallback(() => {
-    setStages({ monitor: "idle", analyst: "idle", advisor: "idle", sentinel: "idle", content: "idle" });
+    setStages({ ...IDLE_STAGES });
     setResult(null);
     setError(null);
-  }, []);
+  }, [setStages, setResult]);
 
   const runPipeline = useCallback(
     async (customEvent?: CustomEvent) => {
@@ -109,6 +108,7 @@ export default function PipelinePage() {
         }
 
         setResult(response);
+  
       } catch (err) {
         setError(err instanceof Error ? err.message : "Pipeline failed");
         setStages({ monitor: "error", analyst: "error", advisor: "error", sentinel: "error", content: "error" });
@@ -151,6 +151,7 @@ export default function PipelinePage() {
       }
 
       setResult(response);
+
     } catch (err) {
       setError(err instanceof Error ? err.message : "Auto scan failed");
     } finally {

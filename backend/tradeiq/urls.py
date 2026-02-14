@@ -16,4 +16,5 @@ urlpatterns = [
     path("api/agents/", include("agents.urls")),
     path("api/demo/", include("demo.urls")),
     path("api/chat/", include("chat.urls")),
+    path("api/deriv-auth/", include("deriv_auth.urls")),
 ]

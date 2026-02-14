@@ -51,6 +51,7 @@ def get_contract_quote(
     amount: float = 10,
     duration: int = 5,
     duration_unit: str = "t",
+    api_token: str = None,
 ) -> Dict[str, Any]:
     """
     Get a price quote for a trading contract.
@@ -59,13 +60,14 @@ def get_contract_quote(
     """
     try:
         symbol = _resolve_symbol(instrument)
-        client = DerivClient()
+        client = DerivClient(api_token=api_token)
         result = client.get_contract_proposal(
             symbol=symbol,
             contract_type=contract_type,
             amount=amount,
             duration=duration,
             duration_unit=duration_unit,
+            api_token=api_token,
         )
 
         if "error" in result:
@@ -89,6 +91,7 @@ def get_contract_quote(
 def execute_demo_trade(
     proposal_id: str,
     price: float,
+    api_token: str = None,
 ) -> Dict[str, Any]:
     """
     Execute a trade on Demo account (virtual money only).
@@ -98,10 +101,11 @@ def execute_demo_trade(
     - Response always includes compliance disclaimer
     """
     try:
-        client = DerivClient()
+        client = DerivClient(api_token=api_token)
         result = client.buy_contract(
             proposal_id=proposal_id,
             price=price,
+            api_token=api_token,
         )
 
         if "error" in result:
@@ -124,6 +128,7 @@ def quote_and_buy(
     amount: float = 10,
     duration: int = 5,
     duration_unit: str = "t",
+    api_token: str = None,
 ) -> Dict[str, Any]:
     """
     Get quote and immediately buy in a single WebSocket session.
@@ -131,13 +136,14 @@ def quote_and_buy(
     """
     try:
         symbol = _resolve_symbol(instrument)
-        client = DerivClient()
+        client = DerivClient(api_token=api_token)
         result = client.quote_and_buy(
             symbol=symbol,
             contract_type=contract_type,
             amount=amount,
             duration=duration,
             duration_unit=duration_unit,
+            api_token=api_token,
         )
 
         if "error" in result:
@@ -155,13 +161,14 @@ def quote_and_buy(
         return {"error": str(e)}
 
 
-def close_position(contract_id: int) -> Dict[str, Any]:
+def close_position(contract_id: int, api_token: str = None) -> Dict[str, Any]:
     """Close an open contract position."""
     try:
-        client = DerivClient()
+        client = DerivClient(api_token=api_token)
         result = client.sell_contract(
             contract_id=contract_id,
             price=0,  # 0 = market price sell
+            api_token=api_token,
         )
 
         if "error" in result:
@@ -174,11 +181,11 @@ def close_position(contract_id: int) -> Dict[str, Any]:
         return {"error": str(e)}
 
 
-def get_positions() -> Dict[str, Any]:
+def get_positions(api_token: str = None) -> Dict[str, Any]:
     """Get all currently open contract positions."""
     try:
-        client = DerivClient()
-        contracts = client.get_open_contracts()
+        client = DerivClient(api_token=api_token)
+        contracts = client.get_open_contracts(api_token=api_token)
 
         if isinstance(contracts, dict) and "error" in contracts:
             return contracts

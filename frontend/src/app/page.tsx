@@ -4,6 +4,7 @@ import { useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
+import { usePageState } from "@/hooks/usePageState";
 import DataCard from "@/components/ui/DataCard";
 import DisclaimerBadge from "@/components/ui/DisclaimerBadge";
 import CollapsibleSection from "@/components/ui/CollapsibleSection";
@@ -45,13 +46,13 @@ function useTrades() {
     fetcher: fetchTrades,
     fallbackData: [],
     pollInterval: 15000,
-    cacheKey: "trades",
+    cacheKey: "dashboard-trades-raw",
   });
 }
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = usePageState("dashboard:tab", "overview");
   const [isRefreshingInsights, setIsRefreshingInsights] = useState(false);
   const { data: metrics, isUsingMock: metricsIsMock, isBackendOnline } = useDashboardMetrics();
   const { data: insights, isUsingMock: insightsIsMock, refetch: refetchInsights } = useMarketInsights();

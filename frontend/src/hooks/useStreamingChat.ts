@@ -32,14 +32,47 @@ const WELCOME: ChatMessage = {
 /** Timeout for stream responses (45 seconds) */
 const STREAM_TIMEOUT_MS = 45_000;
 
+const CHAT_STORAGE_KEY = "tradeiq-chat-messages";
+
+// ─── sessionStorage persistence ──────────────────────────────────────
+// Survives Next.js chunk re-evaluation on page navigation.
+
+function loadMessages(): ChatMessage[] {
+  if (typeof window === "undefined") return [WELCOME];
+  try {
+    const raw = sessionStorage.getItem(CHAT_STORAGE_KEY);
+    if (raw) {
+      const parsed: ChatMessage[] = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch { /* ignore parse errors */ }
+  return [WELCOME];
+}
+
+function saveMessages(messages: ChatMessage[]) {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages));
+  } catch { /* quota exceeded — silently ignore */ }
+}
+
 export function useStreamingChat(userId?: string): UseStreamingChatReturn {
-  const [messages, setMessages] = useState<ChatMessage[]>([WELCOME]);
+  const [messages, setMessagesRaw] = useState<ChatMessage[]>(() => loadMessages());
   const [streamingMessage, setStreamingMessage] = useState("");
   const [streamStatus, setStreamStatus] = useState<StreamState>("idle");
   const [currentToolCall, setCurrentToolCall] = useState<ToolCallInfo | null>(null);
   const wsRef = useRef<TradeIQWebSocket | null>(null);
   const streamBufferRef = useRef("");
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Wrapper: every state update also syncs to sessionStorage
+  const setMessages = useCallback((action: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
+    setMessagesRaw((prev) => {
+      const next = typeof action === "function" ? action(prev) : action;
+      saveMessages(next);
+      return next;
+    });
+  }, []);
 
   /** Clear any pending timeout */
   const clearStreamTimeout = useCallback(() => {
@@ -68,7 +101,7 @@ export function useStreamingChat(userId?: string): UseStreamingChatReturn {
         },
       ]);
     }
-  }, [clearStreamTimeout]);
+  }, [clearStreamTimeout, setMessages]);
 
   /** Start a timeout that auto-resets if stream_done never arrives */
   const startStreamTimeout = useCallback(() => {
@@ -103,7 +136,7 @@ export function useStreamingChat(userId?: string): UseStreamingChatReturn {
       setStreamingMessage(streamBufferRef.current);
     });
 
-    ws.onStreamDone((fullContent: string, meta) => {
+    ws.onStreamDone((fullContent: string) => {
       clearStreamTimeout();
       setStreamStatus("done");
       setStreamingMessage("");
@@ -117,11 +150,9 @@ export function useStreamingChat(userId?: string): UseStreamingChatReturn {
         skipAnimation: true,
       };
       setMessages((prev) => [...prev, aiMsg]);
-      // Reset after short delay
       setTimeout(() => setStreamStatus("idle"), 300);
     });
 
-    // Handle legacy non-stream replies
     ws.onMessage((data: WebSocketMessage) => {
       if (data.type === "reply") {
         clearStreamTimeout();
@@ -142,7 +173,7 @@ export function useStreamingChat(userId?: string): UseStreamingChatReturn {
       clearStreamTimeout();
       ws.disconnect();
     };
-  }, [userId, clearStreamTimeout]);
+  }, [userId, clearStreamTimeout, setMessages]);
 
   const sendMessage = useCallback((text: string, agentType: string = "auto") => {
     if (!text.trim()) return;
@@ -155,14 +186,14 @@ export function useStreamingChat(userId?: string): UseStreamingChatReturn {
     setMessages((prev) => [...prev, userMsg]);
     startStreamTimeout();
     wsRef.current?.sendMessage(text.trim(), agentType);
-  }, [startStreamTimeout]);
+  }, [startStreamTimeout, setMessages]);
 
   const clearHistory = useCallback(() => {
     clearStreamTimeout();
     setMessages([WELCOME]);
     setStreamingMessage("");
     setStreamStatus("idle");
-  }, [clearStreamTimeout]);
+  }, [clearStreamTimeout, setMessages]);
 
   return { messages, streamingMessage, streamStatus, currentToolCall, sendMessage, clearHistory };
 }

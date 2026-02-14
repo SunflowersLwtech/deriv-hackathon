@@ -311,6 +311,10 @@ def get_copytrading_tools() -> List[Dict[str, Any]]:
                             "type": "integer",
                             "description": "Maximum number of traders to return",
                             "default": 10
+                        },
+                        "api_token": {
+                            "type": "string",
+                            "description": "User's Deriv API token (resolved automatically from user session)"
                         }
                     },
                     "required": []
@@ -328,6 +332,10 @@ def get_copytrading_tools() -> List[Dict[str, Any]]:
                         "trader_id": {
                             "type": "string",
                             "description": "The trader's login ID"
+                        },
+                        "api_token": {
+                            "type": "string",
+                            "description": "User's Deriv API token (resolved automatically from user session)"
                         }
                     },
                     "required": ["trader_id"]
@@ -345,6 +353,10 @@ def get_copytrading_tools() -> List[Dict[str, Any]]:
                         "user_id": {
                             "type": "string",
                             "description": "User UUID for behavioral profile matching"
+                        },
+                        "api_token": {
+                            "type": "string",
+                            "description": "User's Deriv API token (resolved automatically from user session)"
                         }
                     },
                     "required": ["user_id"]
@@ -355,7 +367,7 @@ def get_copytrading_tools() -> List[Dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "start_copy_trade",
-                "description": "Start copying a trader on Demo account. Educational: lets users learn how copy trading works.",
+                "description": "Start copying a trader. Uses the user's connected Deriv account token.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -365,10 +377,10 @@ def get_copytrading_tools() -> List[Dict[str, Any]]:
                         },
                         "api_token": {
                             "type": "string",
-                            "description": "User's Deriv API token (Demo account only)"
+                            "description": "User's Deriv API token (resolved automatically from user session)"
                         }
                     },
-                    "required": ["trader_id", "api_token"]
+                    "required": ["trader_id"]
                 }
             }
         },
@@ -386,10 +398,10 @@ def get_copytrading_tools() -> List[Dict[str, Any]]:
                         },
                         "api_token": {
                             "type": "string",
-                            "description": "User's Deriv API token"
+                            "description": "User's Deriv API token (resolved automatically from user session)"
                         }
                     },
-                    "required": ["trader_id", "api_token"]
+                    "required": ["trader_id"]
                 }
             }
         }
@@ -520,22 +532,37 @@ TOOL_FUNCTIONS = {
 }
 
 
-def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Any:
+def execute_tool(tool_name: str, arguments: Dict[str, Any], api_token: str = None) -> Any:
     """
     Execute a tool function by name.
-    
+
     Args:
         tool_name: Name of the tool function
         arguments: Arguments to pass to the function
-    
+        api_token: Per-user Deriv API token to inject into trading/copytrading tools
+
     Returns:
         Tool execution result
     """
     if tool_name not in TOOL_FUNCTIONS:
         return {"error": f"Tool {tool_name} not found"}
-    
+
     try:
         func = TOOL_FUNCTIONS[tool_name]
+        # Inject api_token for trading/copytrading tools that accept it
+        if api_token and tool_name in _TOKEN_AWARE_TOOLS:
+            arguments = {**arguments, "api_token": api_token}
         return func(**arguments)
     except Exception as e:
         return {"error": str(e)}
+
+
+# Tools that accept an api_token parameter for per-user Deriv authentication
+_TOKEN_AWARE_TOOLS = {
+    "get_contract_quote",
+    "execute_demo_trade",
+    "close_position",
+    "get_positions",
+    "start_copy_trade",
+    "stop_copy_trade",
+}

@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     "demo",
     "copytrading",
     "trading",
+    "deriv_auth",
 ]
 
 MIDDLEWARE = [

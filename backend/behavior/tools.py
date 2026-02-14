@@ -100,8 +100,12 @@ def analyze_trade_patterns(user_id: str, hours: int = 24) -> Dict[str, Any]:
     except:
         avg_daily = 8
     
+    # Determine data source: check if any trade is real (is_mock=False)
+    has_real = any(not t.get('is_mock', True) for t in trades)
+    data_source = "real" if has_real else "demo"
+
     # Run all pattern detection algorithms
-    patterns = analyze_all_patterns(trades, user_avg_daily_trades=int(avg_daily))
+    patterns = analyze_all_patterns(trades, user_avg_daily_trades=int(avg_daily), data_source=data_source)
     
     # Generate summary
     detected_patterns = []

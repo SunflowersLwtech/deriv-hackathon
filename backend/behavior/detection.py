@@ -317,14 +317,19 @@ def detect_time_based_patterns(trades: List[Dict[str, Any]], min_trades_per_hour
     }
 
 
-def analyze_all_patterns(trades: List[Dict[str, Any]], user_avg_daily_trades: int = 8) -> Dict[str, Any]:
+def analyze_all_patterns(
+    trades: List[Dict[str, Any]],
+    user_avg_daily_trades: int = 8,
+    data_source: str = "demo",
+) -> Dict[str, Any]:
     """
     Run all detection algorithms and return comprehensive analysis.
-    
+
     Args:
         trades: List of trade dicts
         user_avg_daily_trades: User's historical daily average
-    
+        data_source: "real" or "demo" — passed through to the result
+
     Returns:
         {
             'revenge_trading': {...},
@@ -332,24 +337,25 @@ def analyze_all_patterns(trades: List[Dict[str, Any]], user_avg_daily_trades: in
             'loss_chasing': {...},
             'time_patterns': {...},
             'has_any_pattern': bool,
-            'highest_severity': str
+            'highest_severity': str,
+            'data_source': str
         }
     """
     revenge = detect_revenge_trading(trades)
     overtrading = detect_overtrading(trades, user_avg_daily_trades)
     loss_chasing = detect_loss_chasing(trades)
     time_patterns = detect_time_based_patterns(trades)
-    
+
     patterns = {
         'revenge_trading': revenge,
         'overtrading': overtrading,
         'loss_chasing': loss_chasing,
         'time_patterns': time_patterns
     }
-    
+
     # Check if any pattern detected
     has_any = any(p['detected'] for p in patterns.values())
-    
+
     # Find highest severity
     severities = ['none', 'low', 'medium', 'high']
     max_severity = 'none'
@@ -357,9 +363,10 @@ def analyze_all_patterns(trades: List[Dict[str, Any]], user_avg_daily_trades: in
         severity = pattern.get('severity', 'none')
         if severities.index(severity) > severities.index(max_severity):
             max_severity = severity
-    
+
     return {
         **patterns,
         'has_any_pattern': has_any,
-        'highest_severity': max_severity
+        'highest_severity': max_severity,
+        'data_source': data_source,
     }

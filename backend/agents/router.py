@@ -79,6 +79,7 @@ def route_query(
     agent_type: str = "market",
     user_id: Optional[str] = None,
     context: Optional[Dict[str, Any]] = None,
+    api_token: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Route user query to appropriate tools via DeepSeek function calling."""
 
@@ -148,7 +149,7 @@ def route_query(
         if pending_tool_calls:
             tool_results_for_llm = []
             for tc in pending_tool_calls:
-                result = execute_tool(tc["name"], tc["arguments"])
+                result = execute_tool(tc["name"], tc["arguments"], api_token=api_token)
                 tools_used.append({"name": tc["name"], "arguments": tc["arguments"], "result": result})
                 tool_results_for_llm.append({
                     "role": "tool",
@@ -191,7 +192,7 @@ def route_query(
                 # Execute the leaked tool calls
                 extra_context_parts = []
                 for dc in dsml_calls:
-                    result = execute_tool(dc["name"], dc["arguments"])
+                    result = execute_tool(dc["name"], dc["arguments"], api_token=api_token)
                     tools_used.append({"name": dc["name"], "arguments": dc["arguments"], "result": result})
                     extra_context_parts.append(
                         f"Tool {dc['name']}({json.dumps(dc['arguments'])}): "
@@ -286,8 +287,8 @@ def route_behavior_query(query: str, user_id: str, context: Optional[Dict[str, A
 def route_content_query(query: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     return route_query(query, agent_type="content", context=context)
 
-def route_copytrading_query(query: str, user_id: Optional[str] = None, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    return route_query(query, agent_type="copytrading", user_id=user_id, context=context)
+def route_copytrading_query(query: str, user_id: Optional[str] = None, context: Optional[Dict[str, Any]] = None, api_token: Optional[str] = None) -> Dict[str, Any]:
+    return route_query(query, agent_type="copytrading", user_id=user_id, context=context, api_token=api_token)
 
-def route_trading_query(query: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    return route_query(query, agent_type="trading", context=context)
+def route_trading_query(query: str, context: Optional[Dict[str, Any]] = None, api_token: Optional[str] = None) -> Dict[str, Any]:
+    return route_query(query, agent_type="trading", context=context, api_token=api_token)

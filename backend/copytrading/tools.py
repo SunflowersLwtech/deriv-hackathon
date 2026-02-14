@@ -122,11 +122,11 @@ def _safe_limit(limit: int) -> int:
         return 10
 
 
-def get_top_traders(limit: int = 10) -> Dict[str, Any]:
+def get_top_traders(limit: int = 10, api_token: str = None) -> Dict[str, Any]:
     """Get list of traders available for copy trading with basic statistics."""
     safe_limit = _safe_limit(limit)
     try:
-        client = DerivCopyTradingClient()
+        client = DerivCopyTradingClient(api_token=api_token)
         result = client.get_copytrading_list()
 
         if "error" in result:
@@ -210,7 +210,7 @@ def get_top_traders(limit: int = 10) -> Dict[str, Any]:
         }
 
 
-def get_trader_stats(trader_id: str) -> Dict[str, Any]:
+def get_trader_stats(trader_id: str, api_token: str = None) -> Dict[str, Any]:
     """Get detailed statistics for a specific trader."""
     # Check if this is a demo trader
     demo = next((t for t in DEMO_TRADERS if t["loginid"] == trader_id), None)
@@ -230,7 +230,7 @@ def get_trader_stats(trader_id: str) -> Dict[str, Any]:
         }
 
     try:
-        client = DerivCopyTradingClient()
+        client = DerivCopyTradingClient(api_token=api_token)
         stats = client.get_copytrading_statistics(trader_id)
 
         if "error" in stats:
@@ -263,13 +263,13 @@ def get_trader_stats(trader_id: str) -> Dict[str, Any]:
         return {"error": str(e)}
 
 
-def recommend_trader(user_id: str) -> Dict[str, Any]:
+def recommend_trader(user_id: str, api_token: str = None) -> Dict[str, Any]:
     """AI-powered trader recommendation based on user's trading style."""
     try:
-        client = DerivCopyTradingClient()
+        client = DerivCopyTradingClient(api_token=api_token)
 
         # Get available traders
-        traders_result = get_top_traders(limit=5)
+        traders_result = get_top_traders(limit=5, api_token=api_token)
         if "error" in traders_result and not traders_result.get("traders"):
             return {"error": traders_result["error"], "recommendations": []}
 
@@ -326,21 +326,21 @@ def recommend_trader(user_id: str) -> Dict[str, Any]:
         return {"error": str(e), "recommendations": []}
 
 
-def start_copy_trade(trader_id: str, api_token: str) -> Dict[str, Any]:
-    """Start copying a trader (Demo account only)."""
+def start_copy_trade(trader_id: str, api_token: str = None) -> Dict[str, Any]:
+    """Start copying a trader."""
     try:
-        client = DerivCopyTradingClient()
-        result = client.start_copy(trader_id=trader_id, api_token=api_token)
+        client = DerivCopyTradingClient(api_token=api_token)
+        result = client.start_copy(trader_id=trader_id)
         return result
     except Exception as e:
         return {"error": str(e)}
 
 
-def stop_copy_trade(trader_id: str, api_token: str) -> Dict[str, Any]:
+def stop_copy_trade(trader_id: str, api_token: str = None) -> Dict[str, Any]:
     """Stop copying a trader."""
     try:
-        client = DerivCopyTradingClient()
-        result = client.stop_copy(trader_id=trader_id, api_token=api_token)
+        client = DerivCopyTradingClient(api_token=api_token)
+        result = client.stop_copy(trader_id=trader_id)
         return result
     except Exception as e:
         return {"error": str(e)}
