@@ -119,24 +119,46 @@ export default function MarketPage() {
           <DisclaimerBadge variant="banner" text="Educational analysis only. Not trading signals." className="max-w-xs" />
         </div>
 
-        <div className="flex items-center gap-0 border border-border rounded-md overflow-hidden w-fit flex-wrap">
-          {availableInstruments.map((symbol) => (
-            <button
-              key={symbol}
-              onClick={() => setSelectedInstrument(symbol)}
+        <div className="flex items-center gap-3">
+          <label htmlFor="instrument-select" className="text-sm font-medium text-muted mono-data tracking-wider">
+            INSTRUMENT:
+          </label>
+          <div className="relative">
+            <select
+              id="instrument-select"
+              value={selectedInstrument}
+              onChange={(e) => setSelectedInstrument(e.target.value)}
+              disabled={availableInstruments.length === 0}
               className={cn(
-                "px-5 py-3 text-sm font-medium tracking-wider mono-data transition-colors border-r border-border last:border-r-0 flex items-center gap-2.5",
-                selectedInstrument === symbol
-                  ? "bg-white text-black"
-                  : "bg-transparent text-muted hover:text-white hover:bg-surface"
+                "appearance-none bg-card border border-border rounded-md pl-4 pr-10 py-3",
+                "text-sm font-medium tracking-wider mono-data text-white",
+                "focus:outline-none focus:border-white focus:ring-1 focus:ring-white",
+                "transition-all cursor-pointer hover:border-muted",
+                "disabled:opacity-50 disabled:cursor-not-allowed",
+                "min-w-[200px]"
               )}
             >
-              <span className="text-base">{INSTRUMENT_ICONS[symbol] || "📊"}</span>
-              {symbol}
-            </button>
-          ))}
-          {availableInstruments.length === 0 && (
-            <span className="px-5 py-3 text-sm text-muted mono-data">No instruments available from backend.</span>
+              {availableInstruments.length === 0 ? (
+                <option value="">No instruments available</option>
+              ) : (
+                availableInstruments.map((symbol) => (
+                  <option key={symbol} value={symbol} className="bg-surface text-white">
+                    {INSTRUMENT_ICONS[symbol] || "📊"} {symbol}
+                  </option>
+                ))
+              )}
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-muted">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+          {selectedInstrument && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-surface border border-border rounded-md">
+              <span className="text-xl">{INSTRUMENT_ICONS[selectedInstrument] || "📊"}</span>
+              <span className="text-sm font-semibold text-white mono-data tracking-wider">{selectedInstrument}</span>
+            </div>
           )}
         </div>
 
