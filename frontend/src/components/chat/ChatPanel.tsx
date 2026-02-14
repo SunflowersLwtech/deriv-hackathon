@@ -51,12 +51,26 @@ export default function ChatPanel() {
           ))}
         </div>
 
-        {/* Live streaming / thinking */}
-        {isProcessing && (
+        {/* Thinking / Tool call phase */}
+        {isProcessing && (streamStatus === "thinking" || streamStatus === "tool_call") && (
           <ThinkingProcess
             status={streamStatus}
             toolCall={currentToolCall}
-            streamingText={streamingMessage}
+            streamingText=""
+          />
+        )}
+
+        {/* Streaming phase — render as a ChatMessage with typewriter cursor */}
+        {streamStatus === "streaming" && streamingMessage && (
+          <ChatMessage
+            message={{
+              role: "assistant",
+              content: "",
+              timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }),
+              type: "normal",
+            }}
+            isStreaming
+            streamingContent={streamingMessage}
           />
         )}
 
