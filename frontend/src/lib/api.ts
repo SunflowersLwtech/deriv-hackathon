@@ -807,6 +807,8 @@ export interface ChatMessage {
   content: string;
   timestamp?: string;
   type?: "normal" | "nudge" | "disclaimer";
+  /** When true, skip typewriter animation (message was already streamed) */
+  skipAnimation?: boolean;
 }
 
 export interface ChatResponse {

@@ -51,16 +51,45 @@ except ImportError:
 
 # Deriv symbol mapping: user-friendly -> Deriv API symbol
 DERIV_SYMBOLS = {
+    # Major forex pairs
     "EUR/USD": "frxEURUSD",
     "GBP/USD": "frxGBPUSD",
     "USD/JPY": "frxUSDJPY",
     "AUD/USD": "frxAUDUSD",
     "USD/CHF": "frxUSDCHF",
+    "USD/CAD": "frxUSDCAD",
+    "NZD/USD": "frxNZDUSD",
+    # Cross pairs
+    "EUR/GBP": "frxEURGBP",
+    "EUR/JPY": "frxEURJPY",
+    "GBP/JPY": "frxGBPJPY",
+    "AUD/JPY": "frxAUDJPY",
+    "EUR/AUD": "frxEURAUD",
+    "EUR/CHF": "frxEURCHF",
+    "EUR/CAD": "frxEURCAD",
+    "GBP/AUD": "frxGBPAUD",
+    "GBP/CHF": "frxGBPCHF",
+    "GBP/CAD": "frxGBPCAD",
+    # Exotic pairs
+    "USD/CNH": "frxUSDCNH",
+    "USD/CNY": "frxUSDCNH",  # CNH = offshore yuan on Deriv
+    "USD/SGD": "frxUSDSGD",
+    "USD/HKD": "frxUSDHKD",
+    "USD/MXN": "frxUSDMXN",
+    "USD/ZAR": "frxUSDZAR",
+    "USD/TRY": "frxUSDTRY",
+    "USD/SEK": "frxUSDSEK",
+    "USD/NOK": "frxUSDNOK",
+    "USD/DKK": "frxUSDDKK",
+    # Crypto
     "BTC/USD": "cryBTCUSD",
     "ETH/USD": "cryETHUSD",
+    # Metals
     "GOLD": "frxXAUUSD",
     "XAU/USD": "frxXAUUSD",
     "SILVER": "frxXAGUSD",
+    "XAG/USD": "frxXAGUSD",
+    # Synthetic indices
     "Volatility 75": "R_75",
     "Volatility 75 Index": "R_75",
     "V75": "R_75",
@@ -68,6 +97,10 @@ DERIV_SYMBOLS = {
     "V100": "R_100",
     "Volatility 10": "R_10",
     "V10": "R_10",
+    "Volatility 25": "R_25",
+    "V25": "R_25",
+    "Volatility 50": "R_50",
+    "V50": "R_50",
 }
 
 TIMEFRAME_TO_GRANULARITY = {
@@ -174,19 +207,79 @@ def _run_async_in_new_thread(coro):
     return result[0]
 
 
+def _parse_currency_pair(instrument: str) -> Optional[tuple]:
+    """Try to parse an instrument string into (base, quote) currency codes.
+    Returns None if it doesn't look like a forex pair."""
+    # Handles: "CNY/MYR", "cny/myr", "CNYMYR", "USD CNY"
+    inst = instrument.strip().upper()
+    # Explicit separator
+    for sep in ("/", "-", "_", " "):
+        if sep in inst:
+            parts = inst.split(sep, 1)
+            if len(parts) == 2 and len(parts[0]) == 3 and len(parts[1]) == 3:
+                return parts[0], parts[1]
+    # No separator, 6-char string
+    if len(inst) == 6 and inst.isalpha():
+        return inst[:3], inst[3:]
+    return None
+
+
+def _fetch_open_exchange_rate(base: str, quote: str) -> Dict[str, Any]:
+    """Fetch exchange rate from the free Open Exchange Rates API (no key needed).
+    Uses https://open.er-api.com which provides ~170 currencies."""
+    try:
+        resp = requests.get(
+            f"https://open.er-api.com/v6/latest/{base}",
+            timeout=6,
+        )
+        if resp.status_code != 200:
+            return {"price": None, "error": f"Exchange rate API HTTP {resp.status_code}"}
+        data = resp.json()
+        if data.get("result") != "success":
+            return {"price": None, "error": "Exchange rate API returned failure"}
+        rates = data.get("rates", {})
+        rate = rates.get(quote)
+        if rate is None:
+            return {"price": None, "error": f"Currency {quote} not found in exchange rate data"}
+        return {
+            "instrument": f"{base}/{quote}",
+            "price": round(float(rate), 6),
+            "timestamp": data.get("time_last_update_utc", datetime.now(tz=timezone.utc).isoformat()),
+            "source": "open.er-api.com (ECB/market rates)",
+            "note": "Indicative mid-market rate, not a live trading quote.",
+        }
+    except Exception as e:
+        return {"price": None, "error": f"Exchange rate lookup failed: {e}"}
+
+
 def fetch_price_data(instrument: str) -> Dict[str, Any]:
     """
-    Fetch current price data for an instrument from Deriv WebSocket API.
-    Uses Redis cache to avoid redundant WebSocket calls (5-second TTL).
+    Fetch current price data for an instrument.
+
+    Priority:
+    1. Deriv WebSocket API (live trading quotes)
+    2. Free exchange rate API fallback (indicative mid-market rates for any
+       currency pair Deriv doesn't offer, e.g. CNY/MYR, THB/PHP, etc.)
 
     Args:
-        instrument: Trading instrument symbol (e.g., "EUR/USD")
+        instrument: Trading instrument symbol (e.g., "EUR/USD", "CNY/MYR")
 
     Returns:
         Dict with price, change, etc.
     """
     # Weekend guard: forex/commodity markets are closed Fri 22:00 – Sun 22:00 UTC
     if _is_forex_instrument(instrument) and _is_forex_market_closed():
+        # Even if Deriv is closed, try the free API for indicative rates
+        pair = _parse_currency_pair(instrument)
+        if pair:
+            fallback = _fetch_open_exchange_rate(pair[0], pair[1])
+            if fallback.get("price") is not None:
+                fallback["market_closed"] = True
+                fallback["note"] = (
+                    "Forex market is closed on weekends. "
+                    "This is an indicative mid-market rate from the last session."
+                )
+                return fallback
         return {
             "instrument": instrument,
             "price": None,
@@ -199,9 +292,7 @@ def fetch_price_data(instrument: str) -> Dict[str, Any]:
             "source": "deriv",
         }
 
-    # Check cache first (short 5s TTL for live prices — deduplicates the burst
-    # of concurrent requests that fire when dashboard hooks mount at once.
-    # This differs from cache.py's 300s default which is for longer-lived data.
+    # Check cache first (short 5s TTL for live prices)
     if _CACHE_AVAILABLE:
         try:
             cached = get_cached_price(instrument)
@@ -223,8 +314,23 @@ def fetch_price_data(instrument: str) -> Dict[str, Any]:
                 set_cached_price(instrument, result["price"], ttl_seconds=5)
             except Exception as exc:
                 logger.debug("Redis cache write failed for %s: %s", instrument, exc)
+
+        # If Deriv returned an error, try free exchange rate API as fallback
+        if result.get("price") is None and result.get("error"):
+            pair = _parse_currency_pair(instrument)
+            if pair:
+                fallback = _fetch_open_exchange_rate(pair[0], pair[1])
+                if fallback.get("price") is not None:
+                    return fallback
+
         return result
     except Exception as e:
+        # Last resort: try free exchange rate API
+        pair = _parse_currency_pair(instrument)
+        if pair:
+            fallback = _fetch_open_exchange_rate(pair[0], pair[1])
+            if fallback.get("price") is not None:
+                return fallback
         return {
             "instrument": instrument,
             "price": None,
@@ -413,9 +519,8 @@ def _fetch_finnhub_headlines(limit: int = 10) -> List[Dict[str, Any]]:
     if not api_key:
         return []
 
-    # Fetch from multiple relevant categories
     categories = ["forex", "crypto", "general"]
-    all_articles = []
+    all_articles: List[Dict[str, Any]] = []
 
     for category in categories:
         try:
@@ -426,16 +531,13 @@ def _fetch_finnhub_headlines(limit: int = 10) -> List[Dict[str, Any]]:
             )
             if response.status_code != 200:
                 continue
-
             items = response.json()
             if not isinstance(items, list):
                 continue
-
             for item in items:
                 headline = (item.get("headline") or "").strip()
                 if not headline:
                     continue
-
                 all_articles.append({
                     "title": headline,
                     "description": (item.get("summary") or "").strip(),
@@ -451,69 +553,75 @@ def _fetch_finnhub_headlines(limit: int = 10) -> List[Dict[str, Any]]:
         except Exception:
             continue
 
-    # Deduplicate and sort by date
-    seen_urls = set()
-    deduped = []
+    # Deduplicate by URL and sort by date
+    seen_urls: set[str] = set()
+    deduped: List[Dict[str, Any]] = []
     for article in all_articles:
         url = article.get("url", "")
         if url and url not in seen_urls:
             seen_urls.add(url)
             deduped.append(article)
-
-    # Sort by published date (most recent first)
     deduped.sort(key=lambda x: x.get("publishedAt", ""), reverse=True)
-
     return deduped[:limit]
+
+
+# Terms used by fetch_top_headlines and generate_insights_from_news to filter
+# articles for trading relevance.
+_TRADING_TERMS = {
+    "forex", "trading", "crypto", "bitcoin", "ethereum", "btc", "eth",
+    "stock", "market", "usd", "eur", "gbp", "jpy", "gold", "xau",
+    "currency", "exchange", "trader", "cfd", "options", "futures",
+    "commodities", "oil", "silver", "nasdaq", "dow", "s&p",
+}
 
 
 def fetch_top_headlines(limit: int = 10) -> List[Dict[str, Any]]:
     """
     Fetch top trading & finance headlines from NewsAPI, falling back to Finnhub.
-    Focuses on forex, crypto, stocks, commodities, and market news relevant to Deriv traders.
+    Focuses on forex, crypto, stocks, commodities, and market news relevant to
+    Deriv traders.
     """
     api_key = os.environ.get("NEWS_API_KEY", "")
 
-    # Try NewsAPI with trading-specific search queries
     if api_key:
-        try:
-            # Use /everything endpoint with trading-specific keywords for better relevance
-            # Focus on major international trading topics (not region-specific)
-            trading_keywords = "forex OR cryptocurrency OR \"stock market\" OR \"bitcoin\" OR \"EUR/USD\" OR \"gold prices\" OR \"oil prices\" OR \"crypto market\""
+        trading_keywords = (
+            'forex OR cryptocurrency OR "stock market" OR "bitcoin" '
+            'OR "EUR/USD" OR "gold prices" OR "oil prices" OR "crypto market"'
+        )
+        trusted_sources = (
+            "bloomberg,reuters,financial-times,"
+            "the-wall-street-journal,cnbc,fortune,business-insider"
+        )
 
-            # Include major global financial news sources for diversity
-            trusted_sources = "bloomberg,reuters,financial-times,the-wall-street-journal,cnbc,fortune,business-insider"
-
-            response = requests.get(
-                "https://newsapi.org/v2/everything",
-                params={
+        for sources_param in (trusted_sources, None):
+            try:
+                params: Dict[str, Any] = {
                     "q": trading_keywords,
-                    "sources": trusted_sources,  # Prioritize global financial sources
                     "apiKey": api_key,
                     "sortBy": "publishedAt",
                     "language": "en",
-                    "pageSize": limit * 3,  # Fetch more for better filtering
-                },
-                timeout=5,
-            )
-            if response.status_code == 200:
-                articles = response.json().get("articles", [])
-
-                # Filter for trading-relevant headlines
-                filtered = []
-                trading_terms = {
-                    "forex", "trading", "crypto", "bitcoin", "ethereum", "btc", "eth",
-                    "stock", "market", "usd", "eur", "gbp", "jpy", "gold", "xau",
-                    "currency", "exchange", "trader", "cfd", "options", "futures",
-                    "commodities", "oil", "silver", "nasdaq", "dow", "s&p"
+                    "pageSize": limit * 3,
                 }
+                if sources_param:
+                    params["sources"] = sources_param
 
+                response = requests.get(
+                    "https://newsapi.org/v2/everything",
+                    params=params,
+                    timeout=5,
+                )
+                if response.status_code != 200:
+                    continue
+
+                articles = response.json().get("articles", [])
+                region_blocklist = {"india", "indian rupee", "mumbai", "delhi", "sensex", "nifty"}
+
+                filtered: List[Dict[str, Any]] = []
                 for a in articles:
-                    title_lower = (a.get("title") or "").lower()
-                    desc_lower = (a.get("description") or "").lower()
-                    combined = f"{title_lower} {desc_lower}"
-
-                    # Check if article contains trading-related terms
-                    if any(term in combined for term in trading_terms):
+                    combined = f"{(a.get('title') or '').lower()} {(a.get('description') or '').lower()}"
+                    if any(t in combined for t in region_blocklist):
+                        continue
+                    if any(t in combined for t in _TRADING_TERMS):
                         filtered.append({
                             "title": a.get("title", ""),
                             "description": a.get("description", ""),
@@ -521,58 +629,14 @@ def fetch_top_headlines(limit: int = 10) -> List[Dict[str, Any]]:
                             "publishedAt": a.get("publishedAt", ""),
                             "source": a.get("source", {}).get("name", ""),
                         })
-
                         if len(filtered) >= limit:
                             break
-
                 if filtered:
                     return filtered
+            except Exception as e:
+                logger.debug(f"NewsAPI trading headlines failed: {e}")
 
-            # If no results with trusted sources, try again without source restriction
-            if not filtered:
-                response = requests.get(
-                    "https://newsapi.org/v2/everything",
-                    params={
-                        "q": trading_keywords,
-                        "apiKey": api_key,
-                        "sortBy": "publishedAt",
-                        "language": "en",
-                        "pageSize": limit * 3,
-                    },
-                    timeout=5,
-                )
-                if response.status_code == 200:
-                    articles = response.json().get("articles", [])
-
-                    for a in articles:
-                        title_lower = (a.get("title") or "").lower()
-                        desc_lower = (a.get("description") or "").lower()
-                        combined = f"{title_lower} {desc_lower}"
-
-                        # Filter out region-specific terms to ensure global relevance
-                        region_specific = ["india", "indian rupee", "mumbai", "delhi", "sensex", "nifty"]
-                        if any(term in combined for term in region_specific):
-                            continue
-
-                        # Check if article contains trading-related terms
-                        if any(term in combined for term in trading_terms):
-                            filtered.append({
-                                "title": a.get("title", ""),
-                                "description": a.get("description", ""),
-                                "url": a.get("url", ""),
-                                "publishedAt": a.get("publishedAt", ""),
-                                "source": a.get("source", {}).get("name", ""),
-                            })
-
-                            if len(filtered) >= limit:
-                                break
-
-                    if filtered:
-                        return filtered
-        except Exception as e:
-            logger.debug(f"NewsAPI trading headlines failed: {e}")
-
-    # Fallback to Finnhub market news (forex, crypto, general market news)
+    # Fallback to Finnhub market news
     return _fetch_finnhub_headlines(limit)
 
 
@@ -1199,34 +1263,22 @@ def fetch_active_symbols() -> List[Dict[str, Any]]:
         ]
 
 
+# ─── News-based insight generation ──────────────────────────────────
+
+
 def cleanup_old_insights(keep_count: int = 20) -> int:
-    """
-    Remove old insights, keeping only the most recent ones.
-
-    Args:
-        keep_count: Number of most recent insights to keep
-
-    Returns:
-        Number of insights deleted
-    """
+    """Remove old insights, keeping only the most recent *keep_count*."""
     try:
-        from .models import MarketInsight
-
-        total_count = MarketInsight.objects.count()
-        if total_count <= keep_count:
+        total = MarketInsight.objects.count()
+        if total <= keep_count:
             return 0
-
-        # Get IDs of insights to keep (most recent)
         keep_ids = list(
             MarketInsight.objects.order_by("-generated_at")
             .values_list("id", flat=True)[:keep_count]
         )
-
-        # Delete all others
-        deleted_count, _ = MarketInsight.objects.exclude(id__in=keep_ids).delete()
-        logger.info(f"Cleaned up {deleted_count} old insights, kept {keep_count} most recent")
-        return deleted_count
-
+        deleted, _ = MarketInsight.objects.exclude(id__in=keep_ids).delete()
+        logger.info(f"Cleaned up {deleted} old insights, kept {keep_count}")
+        return deleted
     except Exception as e:
         logger.error(f"Failed to cleanup old insights: {e}")
         return 0
@@ -1234,78 +1286,62 @@ def cleanup_old_insights(keep_count: int = 20) -> int:
 
 def generate_insights_from_news(limit: int = 8, max_insights: int = 5) -> List[Dict[str, Any]]:
     """
-    Generate AI insights from recent news headlines and save to database.
-
-    Args:
-        limit: Number of news articles to fetch
-        max_insights: Maximum number of insights to generate and store
-
-    Returns:
-        List of generated insights
+    Fetch recent headlines, run them through the LLM to produce trading
+    insights, and persist the results to ``MarketInsight``.
     """
     try:
-        from .models import MarketInsight
-
-        # Cleanup old insights before generating new ones
         cleanup_old_insights(keep_count=15)
 
-        # Fetch recent headlines
         headlines = fetch_top_headlines(limit=limit)
         if not headlines:
             logger.info("No headlines found for insight generation")
             return []
 
-        # Prepare news summary for LLM
-        news_text = "\n\n".join([
-            f"Article {i+1}:\n"
-            f"Title: {article.get('title', '')}\n"
-            f"Description: {article.get('description', '')}\n"
-            f"Source: {article.get('source', 'Unknown')}\n"
-            f"Published: {article.get('publishedAt', '')}"
-            for i, article in enumerate(headlines[:limit])
-        ])
+        news_text = "\n\n".join(
+            f"Article {i + 1}:\n"
+            f"Title: {a.get('title', '')}\n"
+            f"Description: {a.get('description', '')}\n"
+            f"Source: {a.get('source', 'Unknown')}\n"
+            f"Published: {a.get('publishedAt', '')}"
+            for i, a in enumerate(headlines[:limit])
+        )
 
-        # Use LLM to generate trading insights from news
-        prompt = f"""Based on these recent financial news articles, generate {max_insights} actionable trading insights for traders.
+        prompt = (
+            f"Based on these recent financial news articles, generate {max_insights} "
+            "actionable trading insights for traders.\n\n"
+            f"{news_text}\n\n"
+            "For each insight:\n"
+            "1. Focus on market impact and trading implications\n"
+            "2. Be specific about instruments/assets (e.g., BTC/USD, EUR/USD, Gold)\n"
+            "3. Keep insights concise (1-2 sentences max)\n"
+            '4. Classify the insight type as: "news", "technical", or "sentiment"\n'
+            "5. Assign a sentiment score from -1.0 (very bearish) to 1.0 (very bullish)\n\n"
+            "Return ONLY a JSON array with this exact format:\n"
+            "[\n"
+            '  {"instrument": "BTC/USD", "insight_type": "news", '
+            '"content": "…", "sentiment_score": 0.6},\n'
+            "  ...\n"
+            "]\n\n"
+            "RULES:\n"
+            f"- Generate exactly {max_insights} insights\n"
+            "- Each insight must have: instrument, insight_type, content, sentiment_score\n"
+            '- insight_type must be one of: "news", "technical", "sentiment"\n'
+            "- sentiment_score must be between -1.0 and 1.0\n"
+            "- Return ONLY the JSON array, no other text"
+        )
 
-{news_text}
-
-For each insight:
-1. Focus on market impact and trading implications
-2. Be specific about instruments/assets mentioned (e.g., BTC/USD, EUR/USD, Gold)
-3. Keep insights concise (1-2 sentences max)
-4. Classify the insight type as: "news", "technical", or "sentiment"
-5. Assign a sentiment score from -1.0 (very bearish) to 1.0 (very bullish)
-
-Return ONLY a JSON array with this exact format:
-[
-  {{
-    "instrument": "BTC/USD",
-    "insight_type": "news",
-    "content": "Bitcoin rebounds on institutional buying as SEC delays decision on ETF approval.",
-    "sentiment_score": 0.6
-  }},
-  ...
-]
-
-RULES:
-- Generate exactly {max_insights} insights
-- Each insight must have: instrument, insight_type, content, sentiment_score
-- insight_type must be one of: "news", "technical", "sentiment"
-- sentiment_score must be between -1.0 and 1.0
-- Return ONLY the JSON array, no other text"""
+        saved: List[Dict[str, Any]] = []
 
         try:
             llm = get_llm_client()
-            response = llm.simple_chat(
+            response_text = llm.simple_chat(
                 system_prompt=SYSTEM_PROMPT_MARKET,
                 user_message=prompt,
                 temperature=0.4,
-                max_tokens=800
-            )
+                max_tokens=800,
+            ).strip()
 
-            # Parse JSON response
-            response_text = response.strip()
+            # Strip markdown fences if present
             if response_text.startswith("```json"):
                 response_text = response_text.split("```json")[1].split("```")[0].strip()
             elif response_text.startswith("```"):
@@ -1313,89 +1349,68 @@ RULES:
 
             insights_data = json.loads(response_text)
 
-            # Validate and save insights to database
-            saved_insights = []
+            top_sources = [
+                {"title": h.get("title", ""), "source": h.get("source", ""), "url": h.get("url", "")}
+                for h in headlines[:3]
+            ]
+
             for insight in insights_data[:max_insights]:
                 try:
-                    # Create MarketInsight object
-                    market_insight = MarketInsight.objects.create(
+                    obj = MarketInsight.objects.create(
                         instrument=insight.get("instrument", "GENERAL"),
                         insight_type=insight.get("insight_type", "news"),
                         content=insight.get("content", ""),
                         sentiment_score=float(insight.get("sentiment_score", 0.0)),
-                        sources={
-                            "news_articles": [
-                                {
-                                    "title": h.get("title", ""),
-                                    "source": h.get("source", ""),
-                                    "url": h.get("url", "")
-                                }
-                                for h in headlines[:3]  # Store top 3 sources
-                            ]
-                        }
+                        sources={"news_articles": top_sources},
                     )
-                    saved_insights.append({
-                        "id": str(market_insight.id),
-                        "instrument": market_insight.instrument,
-                        "insight_type": market_insight.insight_type,
-                        "content": market_insight.content,
-                        "sentiment_score": market_insight.sentiment_score,
-                        "generated_at": market_insight.generated_at.isoformat(),
+                    saved.append({
+                        "id": str(obj.id),
+                        "instrument": obj.instrument,
+                        "insight_type": obj.insight_type,
+                        "content": obj.content,
+                        "sentiment_score": obj.sentiment_score,
+                        "generated_at": obj.generated_at.isoformat(),
                     })
-                    logger.info(f"Created insight: {insight.get('content', '')[:50]}...")
                 except Exception as exc:
                     logger.warning(f"Failed to save insight: {exc}")
-                    continue
-
-            logger.info(f"Generated and saved {len(saved_insights)} insights from {len(headlines)} news articles")
-            return saved_insights
 
         except Exception as exc:
-            logger.error(f"LLM insight generation failed: {exc}")
-            # Fallback: create basic insights from headlines
-            saved_insights = []
-            for i, article in enumerate(headlines[:max_insights]):
+            logger.error(f"LLM insight generation failed, falling back: {exc}")
+            # Fallback: create basic insights directly from headlines
+            for article in headlines[:max_insights]:
                 try:
-                    # Extract instrument mention from title/description
                     text = f"{article.get('title', '')} {article.get('description', '')}".lower()
                     instrument = "GENERAL"
-                    for symbol in ["btc", "bitcoin"]:
-                        if symbol in text:
-                            instrument = "BTC/USD"
+                    for kw, sym in [
+                        ("btc", "BTC/USD"), ("bitcoin", "BTC/USD"),
+                        ("eth", "ETH/USD"), ("ethereum", "ETH/USD"),
+                        ("eur", "EUR/USD"), ("euro", "EUR/USD"),
+                        ("gold", "GOLD"), ("xau", "GOLD"),
+                    ]:
+                        if kw in text:
+                            instrument = sym
                             break
-                    for symbol in ["eth", "ethereum"]:
-                        if symbol in text:
-                            instrument = "ETH/USD"
-                            break
-                    for symbol in ["eur", "euro"]:
-                        if symbol in text:
-                            instrument = "EUR/USD"
-                            break
-                    for symbol in ["gold", "xau"]:
-                        if symbol in text:
-                            instrument = "GOLD"
-                            break
-
-                    market_insight = MarketInsight.objects.create(
+                    obj = MarketInsight.objects.create(
                         instrument=instrument,
                         insight_type="news",
-                        content=f"{article.get('title', 'Market Update')}: {article.get('description', '')[:150]}",
+                        content=f"{article.get('title', 'Market Update')}: "
+                                f"{(article.get('description') or '')[:150]}",
                         sentiment_score=0.0,
-                        sources={"news_source": article.get("source", ""), "url": article.get("url", "")}
+                        sources={"news_source": article.get("source", ""), "url": article.get("url", "")},
                     )
-                    saved_insights.append({
-                        "id": str(market_insight.id),
-                        "instrument": market_insight.instrument,
-                        "insight_type": market_insight.insight_type,
-                        "content": market_insight.content,
-                        "sentiment_score": market_insight.sentiment_score,
-                        "generated_at": market_insight.generated_at.isoformat(),
+                    saved.append({
+                        "id": str(obj.id),
+                        "instrument": obj.instrument,
+                        "insight_type": obj.insight_type,
+                        "content": obj.content,
+                        "sentiment_score": obj.sentiment_score,
+                        "generated_at": obj.generated_at.isoformat(),
                     })
                 except Exception as exc:
                     logger.warning(f"Failed to save fallback insight: {exc}")
-                    continue
 
-            return saved_insights
+        logger.info(f"Generated {len(saved)} insights from {len(headlines)} articles")
+        return saved
 
     except Exception as e:
         logger.error(f"Failed to generate insights from news: {e}")
