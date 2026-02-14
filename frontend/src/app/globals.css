@@ -2,9 +2,9 @@
 
 @theme inline {
   --color-background: #131722;
-  --color-foreground: #d1d4dc;
-  --color-muted: #787b86;
-  --color-muted-foreground: #5d606b;
+  --color-foreground: #e0e3eb;
+  --color-muted: #c8cbd4;
+  --color-muted-foreground: #9ea2ad;
   --color-border: #2a2e39;
   --color-card: #1e222d;
   --color-card-hover: #252a37;
@@ -24,10 +24,12 @@
 }
 
 /* Base styles */
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
 }
 
 html {
@@ -36,7 +38,7 @@ html {
 
 body {
   background: #131722;
-  color: #d1d4dc;
+  color: #e0e3eb;
   font-family: var(--font-inter), "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;

@@ -83,24 +83,29 @@ export default function DashboardPage() {
     <AppShell>
       <div className="p-6 md:p-8 space-y-6">
         {/* Tab Navigation */}
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-0 border border-border rounded-sm overflow-hidden w-fit">
+        <div className="flex items-center gap-5 border-b border-[#2a2e39] mb-8">
+          <div className="flex items-center gap-10">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={cn(
-                  "px-5 py-2.5 text-xs font-medium tracking-wider mono-data transition-colors border-r border-border last:border-r-0",
+                  "relative pb-4 text-[18px] transition-colors",
                   activeTab === tab.id
-                    ? "bg-white text-black"
-                    : "bg-transparent text-muted hover:text-white hover:bg-surface"
+                    ? "text-white font-semibold"
+                    : "text-[#787b86] font-normal hover:text-[#d1d4dc]"
                 )}
               >
                 {tab.label}
+                {activeTab === tab.id && (
+                  <span className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#2962ff] rounded-full" />
+                )}
               </button>
             ))}
           </div>
-          <DataSourceBadge isUsingMock={metricsIsMock} isBackendOnline={isBackendOnline} />
+          <div className="ml-auto pb-3">
+            <DataSourceBadge isUsingMock={metricsIsMock} isBackendOnline={isBackendOnline} />
+          </div>
         </div>
 
         {/* ── Tab Content Area ── */}
@@ -109,24 +114,20 @@ export default function DashboardPage() {
           {/* ── Overview Tab ── */}
           {activeTab === "overview" && (
             <div className="space-y-6">
-              <p className="text-xs text-muted mono-data">
-                Real-time AI-powered trading intelligence dashboard. All analysis is educational — not financial advice.
-              </p>
-
               {/* Key Metrics Row */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
                 <DataCard
                   title="Portfolio Value"
                   value={`$${metrics.portfolioValue.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
                   subtitle="Updated just now"
-                  trend={metrics.todayPnl >= 0 ? "up" : "down"}
+                  trend={metrics.todayPnl > 0 ? "up" : metrics.todayPnl < 0 ? "down" : "neutral"}
                   glow
                 />
                 <DataCard
                   title="Today's P&L"
-                  value={`${metrics.todayPnl >= 0 ? "+" : ""}$${metrics.todayPnl.toFixed(2)}`}
-                  subtitle={`${metrics.todayPnlPercent >= 0 ? "+" : ""}${metrics.todayPnlPercent.toFixed(2)}%`}
-                  trend={metrics.todayPnl >= 0 ? "up" : "down"}
+                  value={`${metrics.todayPnl > 0 ? "+" : ""}$${metrics.todayPnl.toFixed(2)}`}
+                  subtitle={`${metrics.todayPnlPercent > 0 ? "+" : ""}${metrics.todayPnlPercent.toFixed(2)}%`}
+                  trend={metrics.todayPnl > 0 ? "up" : metrics.todayPnl < 0 ? "down" : "neutral"}
                   glow
                 />
                 <DataCard
@@ -164,27 +165,16 @@ export default function DashboardPage() {
               </div>
 
               {/* Main Content Grid */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
                 <div className="lg:col-span-2">
                   <PnLChart height={340} />
                 </div>
 
-                <div className="space-y-5">
-                  <div className="bg-card border border-border rounded-md p-6">
-                    <h3 className="text-sm font-semibold tracking-wider text-muted uppercase mono-data mb-5">
-                      QUICK ACTIONS
-                    </h3>
-                    <div className="space-y-3">
-                      <QuickActionButton label="RUN MARKET BRIEF" description="AI analysis of tracked instruments" icon="📊" onClick={() => router.push("/market")} />
-                      <QuickActionButton label="CHECK BEHAVIOR" description="Scan current trading patterns" icon="🧠" onClick={() => router.push("/behavior")} />
-                      <QuickActionButton label="GENERATE CONTENT" description="Create Bluesky post from insights" icon="✍️" onClick={() => router.push("/content")} />
-                      <QuickActionButton label="WOW MOMENT" description="Full pipeline: Market → Behavior → Content" icon="⚡" highlight onClick={() => router.push("/behavior")} />
-                    </div>
-                  </div>
-
+                <div className="h-full">
                   <CollapsibleSection
                     title="RECENT AI INSIGHTS"
                     defaultOpen
+                    className="h-full"
                     badge={
                       <div className="flex items-center gap-2">
                         <DataSourceBadge isUsingMock={insightsIsMock} />
@@ -204,7 +194,7 @@ export default function DashboardPage() {
                   >
                     <div className="max-h-[320px] overflow-y-auto p-5 space-y-4">
                       {insights.length === 0 ? (
-                        <p className="text-sm text-muted mono-data text-center py-4">
+                        <p className="text-sm text-muted-foreground mono-data text-center py-4">
                           No insights available. Click REFRESH to generate from latest news.
                         </p>
                       ) : null}
@@ -258,7 +248,7 @@ export default function DashboardPage() {
               >
                 <div className="max-h-[480px] overflow-y-auto p-5 space-y-4">
                   {insights.length === 0 && (
-                    <p className="text-sm text-muted mono-data text-center py-6">
+                    <p className="text-sm text-muted-foreground mono-data text-center py-6">
                       No market insights available. Click REFRESH to generate from latest news.
                     </p>
                   )}
@@ -303,9 +293,9 @@ export default function DashboardPage() {
                 />
                 <DataCard
                   title="Total P&L"
-                  value={`${trades.reduce((s, t) => s + Number(t.pnl), 0) >= 0 ? "+" : ""}$${trades.reduce((s, t) => s + Number(t.pnl), 0).toFixed(2)}`}
+                  value={`${trades.reduce((s, t) => s + Number(t.pnl), 0) > 0 ? "+" : ""}$${trades.reduce((s, t) => s + Number(t.pnl), 0).toFixed(2)}`}
                   subtitle="All trades"
-                  trend={trades.reduce((s, t) => s + Number(t.pnl), 0) >= 0 ? "up" : "down"}
+                  trend={trades.reduce((s, t) => s + Number(t.pnl), 0) > 0 ? "up" : trades.reduce((s, t) => s + Number(t.pnl), 0) < 0 ? "down" : "neutral"}
                   glow
                 />
                 <DataCard
@@ -326,10 +316,10 @@ export default function DashboardPage() {
               <div className="bg-card border border-border rounded-md">
                 <div className="flex items-center justify-between px-6 py-4 border-b border-border">
                   <div className="flex items-center gap-3">
-                    <h3 className="text-sm font-semibold tracking-wider text-muted uppercase mono-data">TRADE HISTORY</h3>
+                    <h3 className="text-sm font-semibold tracking-wider text-foreground uppercase mono-data">TRADE HISTORY</h3>
                     <DataSourceBadge isUsingMock={tradesIsMock} isBackendOnline={isBackendOnline} />
                   </div>
-                  <span className="text-xs text-muted mono-data">{trades.length} TRADE{trades.length !== 1 ? "S" : ""}</span>
+                  <span className="text-xs text-muted-foreground mono-data">{trades.length} TRADE{trades.length !== 1 ? "S" : ""}</span>
                 </div>
 
                 {trades.length === 0 ? (
@@ -370,16 +360,16 @@ export default function DashboardPage() {
                               </span>
                             </div>
                             <div className="col-span-2 text-right">
-                              <span className="text-sm text-muted mono-data">
+                              <span className="text-sm text-foreground mono-data">
                                 {trade.exit_price != null ? `$${Number(trade.exit_price).toFixed(2)}` : "—"}
                               </span>
                             </div>
                             <div className="col-span-2 text-right">
                               <span className={cn(
                                 "text-sm mono-data font-medium",
-                                Number(trade.pnl) >= 0 ? "text-profit" : "text-loss"
+                                Number(trade.pnl) > 0 ? "text-profit" : Number(trade.pnl) < 0 ? "text-loss" : "text-white"
                               )}>
-                                {Number(trade.pnl) >= 0 ? "+" : ""}${Number(trade.pnl).toFixed(2)}
+                                {Number(trade.pnl) > 0 ? "+" : ""}${Number(trade.pnl).toFixed(2)}
                               </span>
                             </div>
                             <div className="col-span-1 text-right">
@@ -425,7 +415,7 @@ export default function DashboardPage() {
               <div className="bg-card border border-border rounded-md">
                 <div className="flex items-center justify-between px-6 py-4 border-b border-border">
                   <div className="flex items-center gap-3">
-                    <h3 className="text-sm font-semibold tracking-wider text-muted uppercase mono-data">AI SIGNALS</h3>
+                    <h3 className="text-sm font-semibold tracking-wider text-foreground uppercase mono-data">AI SIGNALS</h3>
                     <DataSourceBadge isUsingMock={insightsIsMock} isBackendOnline={isBackendOnline} />
                   </div>
                 </div>
@@ -451,7 +441,7 @@ export default function DashboardPage() {
                         </span>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm text-white/90 leading-relaxed">{insight.content}</p>
+                        <p className="text-sm text-foreground leading-relaxed">{insight.content}</p>
                         <div className="flex items-center gap-3 mt-2">
                           <span className="text-xs text-muted-foreground mono-data">{insight.instrument}</span>
                           <span className="text-xs text-muted-foreground mono-data">{insight.time}</span>
@@ -480,26 +470,6 @@ export default function DashboardPage() {
   );
 }
 
-function QuickActionButton({ label, description, icon, highlight, onClick }: { label: string; description: string; icon: string; highlight?: boolean; onClick?: () => void }) {
-  return (
-    <button onClick={onClick} className={cn(
-      "w-full flex items-center gap-4 p-4 rounded-md border transition-all text-left group",
-      highlight
-        ? "border-profit/30 bg-profit/5 hover:bg-profit/10 hover:border-profit/50"
-        : "border-border bg-surface hover:bg-surface-hover hover:border-muted"
-    )}>
-      <span className="text-2xl">{icon}</span>
-      <div>
-        <span className={cn("text-sm font-semibold tracking-wider mono-data block", highlight ? "text-profit" : "text-white")}>{label}</span>
-        <span className="text-xs text-muted-foreground mt-1 block">{description}</span>
-      </div>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="ml-auto text-muted-foreground group-hover:text-white transition-colors">
-        <path d="M9 18l6-6-6-6" />
-      </svg>
-    </button>
-  );
-}
-
 function InsightItem({ type, text, time }: { type: "market" | "behavior" | "content"; text: string; time: string }) {
   const colorMap = { market: "text-accent border-accent/30", behavior: "text-warning border-warning/30", content: "text-cyan border-cyan/30" };
   const labelMap = { market: "MKT", behavior: "BHV", content: "CTN" };
@@ -507,7 +477,7 @@ function InsightItem({ type, text, time }: { type: "market" | "behavior" | "cont
     <div className="flex gap-3.5 items-start">
       <span className={cn("text-[11px] font-bold mono-data tracking-wider mt-0.5 px-2 py-1 border rounded-md shrink-0", colorMap[type])}>{labelMap[type]}</span>
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-muted leading-relaxed">{text}</p>
+        <p className="text-sm text-foreground leading-relaxed">{text}</p>
         <span className="text-xs text-muted-foreground mono-data mt-1 block">{time}</span>
       </div>
     </div>
