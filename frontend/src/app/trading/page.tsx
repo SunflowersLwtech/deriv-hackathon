@@ -2,9 +2,11 @@
 
 import { useEffect, useState, useCallback } from "react";
 import AppShell from "@/components/layout/AppShell";
+import { usePageState } from "@/hooks/usePageState";
 import DataCard from "@/components/ui/DataCard";
 import DisclaimerBadge from "@/components/ui/DisclaimerBadge";
 import LoadingDots from "@/components/ui/LoadingDots";
+import { useDerivAuth } from "@/hooks/useDerivAuth";
 import api, {
   type ContractQuoteResponse,
   type OpenPosition,
@@ -22,18 +24,20 @@ const INSTRUMENTS = [
 ];
 
 export default function TradingPage() {
-  const [instrument, setInstrument] = useState(INSTRUMENTS[0]);
-  const [contractType, setContractType] = useState<"CALL" | "PUT">("CALL");
-  const [amount, setAmount] = useState(10);
-  const [duration, setDuration] = useState(5);
-  const [durationUnit, setDurationUnit] = useState("t");
+  const { isConnected, defaultAccount, isLoading: authLoading, connect } = useDerivAuth();
 
-  const [quote, setQuote] = useState<ContractQuoteResponse | null>(null);
+  const [instrument, setInstrument] = usePageState("trading:instrument", INSTRUMENTS[0]);
+  const [contractType, setContractType] = usePageState<"CALL" | "PUT">("trading:contractType", "CALL");
+  const [amount, setAmount] = usePageState("trading:amount", 10);
+  const [duration, setDuration] = usePageState("trading:duration", 5);
+  const [durationUnit, setDurationUnit] = usePageState("trading:durationUnit", "t");
+
+  const [quote, setQuote] = usePageState<ContractQuoteResponse | null>("trading:quote", null);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [tradeLoading, setTradeLoading] = useState(false);
-  const [tradeResult, setTradeResult] = useState<string | null>(null);
+  const [tradeResult, setTradeResult] = usePageState<string | null>("trading:tradeResult", null);
 
-  const [positions, setPositions] = useState<OpenPosition[]>([]);
+  const [positions, setPositions] = usePageState<OpenPosition[]>("trading:positions", []);
   const [positionsLoading, setPositionsLoading] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
@@ -114,18 +118,46 @@ export default function TradingPage() {
   return (
     <AppShell>
       <div className="p-6 space-y-6 max-w-5xl mx-auto">
-        {/* Demo Banner */}
-        <div className="w-full p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-center">
-          <span className="text-yellow-400 font-bold tracking-wider text-sm">
-            DEMO ACCOUNT — Virtual money only. No real funds at risk.
-          </span>
-        </div>
+        {/* Account Mode Banner */}
+        {!authLoading && (
+          isConnected ? (
+            <div className="w-full p-3 bg-profit/10 border border-profit/30 rounded-lg flex items-center justify-between">
+              <span className="text-profit font-bold tracking-wider text-sm">
+                REAL ACCOUNT
+                {defaultAccount && (
+                  <span className="ml-2 text-xs font-normal text-profit/70">
+                    {defaultAccount.deriv_login_id} ({defaultAccount.currency})
+                  </span>
+                )}
+              </span>
+              <span className="px-2 py-0.5 text-[10px] font-bold bg-profit/20 text-profit rounded uppercase tracking-wider">
+                Live
+              </span>
+            </div>
+          ) : (
+            <div className="w-full p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg flex items-center justify-between">
+              <span className="text-yellow-400 font-bold tracking-wider text-sm">
+                DEMO ACCOUNT — Virtual money only. No real funds at risk.
+              </span>
+              <button
+                onClick={connect}
+                className="px-3 py-1 text-xs font-bold tracking-wider bg-yellow-500/20 text-yellow-400 border border-yellow-500/40 rounded hover:bg-yellow-500/30 transition-colors"
+              >
+                Connect Deriv
+              </button>
+            </div>
+          )
+        )}
 
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-wide">DEMO TRADING</h1>
+          <h1 className="text-2xl font-bold text-white tracking-wide">
+            {isConnected ? "TRADING" : "DEMO TRADING"}
+          </h1>
           <p className="text-muted text-sm mt-1">
-            Learn how Deriv contracts work with virtual money
+            {isConnected
+              ? "Trading with your connected Deriv account"
+              : "Learn how Deriv contracts work with virtual money"}
           </p>
         </div>
 
@@ -273,8 +305,10 @@ export default function TradingPage() {
                 }`}
               >
                 <span className="inline-flex items-center gap-2">
-                  {tradeLoading ? "EXECUTING..." : "EXECUTE DEMO TRADE"}
-                  <span className="px-2 py-0.5 text-[10px] bg-black/20 rounded">DEMO</span>
+                  {tradeLoading ? "EXECUTING..." : (isConnected ? "EXECUTE TRADE" : "EXECUTE DEMO TRADE")}
+                  {!isConnected && (
+                    <span className="px-2 py-0.5 text-[10px] bg-black/20 rounded">DEMO</span>
+                  )}
                 </span>
               </button>
             </div>
@@ -339,8 +373,9 @@ export default function TradingPage() {
           <DisclaimerBadge />
         </div>
         <p className="text-center text-xs text-muted max-w-2xl mx-auto">
-          This is a Demo account using virtual money. No real funds are at risk.
-          Trading involves risk. This is for educational purposes only. Not financial advice.
+          {isConnected
+            ? "Trading with your connected Deriv account. Real funds may be at risk. Trading involves risk. Not financial advice."
+            : "This is a Demo account using virtual money. No real funds are at risk. Trading involves risk. This is for educational purposes only. Not financial advice."}
         </p>
       </div>
     </AppShell>

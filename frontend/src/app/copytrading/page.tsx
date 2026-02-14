@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import AppShell from "@/components/layout/AppShell";
+import { usePageState } from "@/hooks/usePageState";
 import DataCard from "@/components/ui/DataCard";
 import DisclaimerBadge from "@/components/ui/DisclaimerBadge";
 import LoadingDots from "@/components/ui/LoadingDots";
+import { useDerivAuth } from "@/hooks/useDerivAuth";
 import api, {
   type CopyTrader,
   type TraderStatsResponse,
@@ -12,14 +14,17 @@ import api, {
 } from "@/lib/api";
 
 export default function CopyTradingPage() {
-  const [traders, setTraders] = useState<CopyTrader[]>([]);
-  const [shownCount, setShownCount] = useState(0);
-  const [totalCount, setTotalCount] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [selectedTrader, setSelectedTrader] = useState<string | null>(null);
-  const [traderStats, setTraderStats] = useState<TraderStatsResponse | null>(null);
+  const { isConnected, defaultAccount, connect, isLoading: authLoading } = useDerivAuth();
+  const isReal = isConnected && defaultAccount?.account_type === "real";
+
+  const [traders, setTraders] = usePageState<CopyTrader[]>("copy:traders", []);
+  const [shownCount, setShownCount] = usePageState("copy:shownCount", 0);
+  const [totalCount, setTotalCount] = usePageState("copy:totalCount", 0);
+  const [loading, setLoading] = useState(() => traders.length === 0);
+  const [selectedTrader, setSelectedTrader] = usePageState<string | null>("copy:selectedTrader", null);
+  const [traderStats, setTraderStats] = usePageState<TraderStatsResponse | null>("copy:traderStats", null);
   const [statsLoading, setStatsLoading] = useState(false);
-  const [recommendation, setRecommendation] = useState<TraderRecommendationResponse | null>(null);
+  const [recommendation, setRecommendation] = usePageState<TraderRecommendationResponse | null>("copy:recommendation", null);
   const [recLoading, setRecLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,9 +87,22 @@ export default function CopyTradingPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <span className="px-3 py-1 text-xs font-bold tracking-wider bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded-full">
-              DEMO ONLY
-            </span>
+            {/* Account mode badge */}
+            {!authLoading && (
+              isReal ? (
+                <span className="px-3 py-1 text-xs font-bold tracking-wider bg-profit/20 text-profit border border-profit/30 rounded-full">
+                  REAL ACCOUNT
+                </span>
+              ) : isConnected ? (
+                <span className="px-3 py-1 text-xs font-bold tracking-wider bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-full">
+                  DEMO ACCOUNT
+                </span>
+              ) : (
+                <span className="px-3 py-1 text-xs font-bold tracking-wider bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded-full">
+                  DEMO ONLY
+                </span>
+              )
+            )}
             <button
               onClick={handleGetRecommendation}
               disabled={recLoading}
@@ -94,6 +112,36 @@ export default function CopyTradingPage() {
             </button>
           </div>
         </div>
+
+        {/* Connect CTA for unauthenticated users */}
+        {!authLoading && !isConnected && (
+          <div className="p-4 bg-surface border border-border rounded-lg flex items-center justify-between">
+            <div>
+              <p className="text-white text-sm font-medium">
+                Connect your Deriv account to copy real traders
+              </p>
+              <p className="text-muted text-xs mt-1">
+                Link your account to use your own token for live copy trading data and actions.
+              </p>
+            </div>
+            <button
+              onClick={connect}
+              className="px-4 py-2 text-xs font-bold tracking-wider bg-profit/20 text-profit border border-profit/30 rounded-md hover:bg-profit/30 transition-colors whitespace-nowrap"
+            >
+              CONNECT DERIV
+            </button>
+          </div>
+        )}
+
+        {/* Real account warning */}
+        {isReal && (
+          <div className="p-3 bg-profit/5 border border-profit/20 rounded-md">
+            <p className="text-profit text-xs font-medium">
+              Real Account -- Real Copy Trading. Actions here use your real Deriv account.
+              Start/stop copy trading will affect real funds.
+            </p>
+          </div>
+        )}
 
         {/* AI Recommendation Panel */}
         {recommendation && (
@@ -237,7 +285,11 @@ export default function CopyTradingPage() {
         </div>
         <p className="text-center text-xs text-muted max-w-2xl mx-auto">
           Past performance does not guarantee future results. Copy trading involves risk.
-          This is a Demo account feature for educational purposes only. Not financial advice.
+          {isReal
+            ? " You are using a Real account. Actions affect real funds."
+            : " This is a Demo account feature for educational purposes only."
+          }{" "}
+          Not financial advice.
         </p>
       </div>
     </AppShell>

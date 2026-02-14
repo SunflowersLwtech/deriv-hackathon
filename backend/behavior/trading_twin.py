@@ -54,6 +54,8 @@ class TwinResult:
     key_insight: str
 
     analysis_period_days: int
+    is_real_data: bool = False
+    data_source: str = "demo"
     generated_at: str = ""
 
     def __post_init__(self):
@@ -65,25 +67,41 @@ def generate_trading_twin(
     user_id: str,
     days: int = 30,
     starting_equity: float = 10000.0,
+    prefer_real: bool = True,
 ) -> TwinResult:
     """
     Generate Trading Twin analysis.
 
     Steps:
-    1. Fetch user trades for the last N days
+    1. Fetch user trades for the last N days (prefer real if available)
     2. Tag each trade as impulsive or disciplined
     3. Build dual equity curves
     4. Compute summary statistics
     5. Generate AI narrative
+
+    Args:
+        prefer_real: When True, use real trades (is_mock=False) if the user
+                     has any; fall back to demo trades otherwise.
     """
     from behavior.models import Trade
 
     cutoff = timezone.now() - timedelta(days=days)
+
+    # Determine data source: prefer real trades when available
+    base_qs = Trade.objects.filter(user_id=user_id, opened_at__gte=cutoff)
+    real_count = base_qs.filter(is_mock=False).count()
+
+    if prefer_real and real_count >= 5:
+        qs = base_qs.filter(is_mock=False)
+        is_real_data = True
+        data_source = "real"
+    else:
+        qs = base_qs
+        is_real_data = real_count > 0
+        data_source = "real" if real_count > 0 else "demo"
+
     trades = list(
-        Trade.objects.filter(
-            user_id=user_id,
-            opened_at__gte=cutoff,
-        ).order_by("opened_at").values(
+        qs.order_by("opened_at").values(
             "id", "instrument", "direction", "pnl",
             "entry_price", "exit_price", "opened_at",
             "duration_seconds",
@@ -91,7 +109,7 @@ def generate_trading_twin(
     )
 
     if len(trades) < 5:
-        return _generate_insufficient_data_result(len(trades), days)
+        return _generate_insufficient_data_result(len(trades), days, is_real_data, data_source)
 
     tagged_trades = _tag_impulsive_trades(trades, user_id)
     equity_curve = _build_equity_curves(tagged_trades, starting_equity)
@@ -142,6 +160,8 @@ def generate_trading_twin(
         narrative=narrative,
         key_insight=key_insight,
         analysis_period_days=days,
+        is_real_data=is_real_data,
+        data_source=data_source,
     )
 
 
@@ -306,8 +326,17 @@ Generate a warm, insightful narrative explaining what the Trading Twin reveals."
         )
 
 
-def _generate_insufficient_data_result(trade_count: int, days: int) -> TwinResult:
+def _generate_insufficient_data_result(
+    trade_count: int,
+    days: int,
+    is_real_data: bool = False,
+    data_source: str = "demo",
+) -> TwinResult:
     """Return a friendly result when trade data is insufficient."""
+    if data_source == "real":
+        hint = "Keep trading on Deriv, and your Twin will have enough real data to reveal your patterns."
+    else:
+        hint = "Keep trading on your demo account, and your Twin will have enough data to reveal your patterns."
     return TwinResult(
         equity_curve=[],
         impulsive_final_equity=0,
@@ -321,6 +350,8 @@ def _generate_insufficient_data_result(trade_count: int, days: int) -> TwinResul
         disciplined_gain=0,
         pattern_breakdown={},
         narrative=f"Need at least 5 trades to generate your Trading Twin. You have {trade_count} trades in the last {days} days.",
-        key_insight="Keep trading on your demo account, and your Twin will have enough data to reveal your patterns.",
+        key_insight=hint,
         analysis_period_days=days,
+        is_real_data=is_real_data,
+        data_source=data_source,
     )

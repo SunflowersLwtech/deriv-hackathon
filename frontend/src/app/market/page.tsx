@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import AppShell from "@/components/layout/AppShell";
+import { usePageState } from "@/hooks/usePageState";
 import DataCard from "@/components/ui/DataCard";
 import DisclaimerBadge from "@/components/ui/DisclaimerBadge";
 import CollapsibleSection from "@/components/ui/CollapsibleSection";
@@ -35,13 +36,13 @@ const INSTRUMENT_ICONS: Record<string, string> = {
 
 export default function MarketPage() {
   const { data: availableInstruments } = useInstrumentUniverse();
-  const [selectedInstrument, setSelectedInstrument] = useState("");
-  const [question, setQuestion] = useState("");
-  const [analysis, setAnalysis] = useState("");
+  const [selectedInstrument, setSelectedInstrument] = usePageState("market:instrument", "");
+  const [question, setQuestion] = usePageState("market:question", "");
+  const [analysis, setAnalysis] = usePageState("market:analysis", "");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
-  const [technicals, setTechnicals] = useState<MarketTechnicals | null>(null);
-  const [sentiment, setSentiment] = useState<MarketSentiment | null>(null);
+  const [technicals, setTechnicals] = usePageState<MarketTechnicals | null>("market:technicals", null);
+  const [sentiment, setSentiment] = usePageState<MarketSentiment | null>("market:sentiment", null);
   const [isMetricsLoading, setIsMetricsLoading] = useState(false);
 
   useEffect(() => {

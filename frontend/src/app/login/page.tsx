@@ -214,6 +214,22 @@ export default function LoginPage() {
             <div className="flex-1 h-px bg-border" />
           </div>
 
+          {/* Connect Deriv Account */}
+          <button
+            onClick={() => {
+              const appId = process.env.NEXT_PUBLIC_DERIV_APP_ID || "125719";
+              const oauthUrl = process.env.NEXT_PUBLIC_DERIV_OAUTH_URL || "https://oauth.deriv.com/oauth2/authorize";
+              window.location.assign(`${oauthUrl}?app_id=${appId}&l=en&brand=deriv`);
+            }}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-sm border border-border bg-surface text-white font-medium text-[12px] tracking-wide hover:bg-surface-hover transition-all duration-200 mb-3"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+            </svg>
+            Connect Deriv Account
+          </button>
+
           {/* Demo Access */}
           <Link
             href="/"

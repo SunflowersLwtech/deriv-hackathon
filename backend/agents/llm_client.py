@@ -1,7 +1,7 @@
 """
 Unified DeepSeek LLM Client for TradeIQ
 Uses DeepSeek-V3 with function calling support.
-Falls back to OpenRouter if DeepSeek API has insufficient balance.
+Falls back to OpenRouter if DeepSeek direct API fails.
 """
 import os
 import logging
@@ -15,7 +15,7 @@ class DeepSeekClient:
     """Unified DeepSeek client for all AI agents, with OpenRouter fallback"""
 
     def __init__(self):
-        # Try DeepSeek direct first, fallback to OpenRouter
+        # Try DeepSeek direct first, OpenRouter as fallback
         deepseek_key = os.environ.get("DEEPSEEK_API_KEY", "")
         openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
 
@@ -24,16 +24,8 @@ class DeepSeekClient:
                 "Neither DEEPSEEK_API_KEY nor OPENROUTER_API_KEY set in environment"
             )
 
-        # Try OpenRouter first (since DeepSeek balance is depleted)
-        if openrouter_key:
-            self.client = OpenAI(
-                api_key=openrouter_key,
-                base_url="https://openrouter.ai/api/v1",
-            )
-            self.chat_model = "deepseek/deepseek-chat-v3-0324"
-            self.reasoner_model = "deepseek/deepseek-chat-v3-0324"
-            self._provider = "openrouter"
-        else:
+        # Try DeepSeek direct first (OpenRouter balance is depleted)
+        if deepseek_key:
             self.client = OpenAI(
                 api_key=deepseek_key,
                 base_url="https://api.deepseek.com",
@@ -41,17 +33,25 @@ class DeepSeekClient:
             self.chat_model = "deepseek-chat"
             self.reasoner_model = "deepseek-chat"
             self._provider = "deepseek"
+        else:
+            self.client = OpenAI(
+                api_key=openrouter_key,
+                base_url="https://openrouter.ai/api/v1",
+            )
+            self.chat_model = "deepseek/deepseek-chat-v3-0324"
+            self.reasoner_model = "deepseek/deepseek-chat-v3-0324"
+            self._provider = "openrouter"
 
         # Fallback client (if primary fails)
         self._fallback_client = None
         self._fallback_model = None
         if deepseek_key and openrouter_key:
-            # Primary is OpenRouter, fallback is DeepSeek direct
+            # Primary is DeepSeek direct, fallback is OpenRouter
             self._fallback_client = OpenAI(
-                api_key=deepseek_key,
-                base_url="https://api.deepseek.com",
+                api_key=openrouter_key,
+                base_url="https://openrouter.ai/api/v1",
             )
-            self._fallback_model = "deepseek-chat"
+            self._fallback_model = "deepseek/deepseek-chat-v3-0324"
 
     def chat(
         self,

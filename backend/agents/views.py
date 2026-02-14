@@ -33,6 +33,7 @@ from trading.tools import (
     close_position,
     get_positions,
 )
+from deriv_auth.middleware import get_deriv_token, has_real_deriv_account
 from dataclasses import asdict
 import json
 
@@ -348,9 +349,11 @@ class AgentCopyTradingView(APIView):
         "action": "list" | "stats" | "recommend" | "start" | "stop",
         "trader_id": "...",
         "user_id": "...",
-        "api_token": "...",
         "limit": 10
     }
+
+    Token is resolved from the authenticated user's Deriv account,
+    falling back to the env DERIV_TOKEN for unauthenticated/demo users.
     """
     permission_classes = [AllowAny]
 
@@ -358,28 +361,40 @@ class AgentCopyTradingView(APIView):
         action = request.data.get("action", "list")
         trader_id = request.data.get("trader_id")
         user_id = request.data.get("user_id")
-        api_token = request.data.get("api_token")
         limit = request.data.get("limit", 10)
+
+        # Resolve token from user's linked Deriv account (with env fallback)
+        api_token = get_deriv_token(request)
+        is_real = has_real_deriv_account(request)
 
         try:
             if action == "list":
-                result = get_top_traders(limit=limit)
+                result = get_top_traders(limit=limit, api_token=api_token)
+                result["is_demo"] = not is_real
             elif action == "stats":
                 if not trader_id:
                     return Response({"error": "trader_id is required"}, status=status.HTTP_400_BAD_REQUEST)
-                result = get_trader_stats(trader_id)
+                result = get_trader_stats(trader_id, api_token=api_token)
+                result["is_demo"] = not is_real
             elif action == "recommend":
                 if not user_id:
                     return Response({"error": "user_id is required"}, status=status.HTTP_400_BAD_REQUEST)
-                result = recommend_trader(user_id)
+                result = recommend_trader(user_id, api_token=api_token)
+                result["is_demo"] = not is_real
             elif action == "start":
-                if not trader_id or not api_token:
-                    return Response({"error": "trader_id and api_token are required"}, status=status.HTTP_400_BAD_REQUEST)
-                result = start_copy_trade(trader_id, api_token)
+                if not trader_id:
+                    return Response({"error": "trader_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+                if not api_token:
+                    return Response({"error": "No Deriv account connected. Please connect your account first."}, status=status.HTTP_400_BAD_REQUEST)
+                result = start_copy_trade(trader_id, api_token=api_token)
+                result["is_demo"] = not is_real
             elif action == "stop":
-                if not trader_id or not api_token:
-                    return Response({"error": "trader_id and api_token are required"}, status=status.HTTP_400_BAD_REQUEST)
-                result = stop_copy_trade(trader_id, api_token)
+                if not trader_id:
+                    return Response({"error": "trader_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+                if not api_token:
+                    return Response({"error": "No Deriv account connected. Please connect your account first."}, status=status.HTTP_400_BAD_REQUEST)
+                result = stop_copy_trade(trader_id, api_token=api_token)
+                result["is_demo"] = not is_real
             else:
                 return Response({"error": f"Unknown action: {action}"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -402,11 +417,18 @@ class AgentTradingView(APIView):
         "price": 10.5,
         "contract_id": 123
     }
+
+    Token is resolved from the authenticated user's Deriv account,
+    falling back to the env DERIV_TOKEN for unauthenticated/demo users.
     """
     permission_classes = [AllowAny]
 
     def post(self, request):
         action = request.data.get("action", "quote")
+
+        # Resolve token from user's linked Deriv account (with env fallback)
+        api_token = get_deriv_token(request)
+        is_real = has_real_deriv_account(request)
 
         try:
             if action == "quote":
@@ -419,6 +441,7 @@ class AgentTradingView(APIView):
                     amount=request.data.get("amount", 10),
                     duration=request.data.get("duration", 5),
                     duration_unit=request.data.get("duration_unit", "t"),
+                    api_token=api_token,
                 )
             elif action == "buy":
                 # Use quote_and_buy to avoid InvalidContractProposal from expired proposals
@@ -431,16 +454,21 @@ class AgentTradingView(APIView):
                     amount=request.data.get("amount", 10),
                     duration=request.data.get("duration", 5),
                     duration_unit=request.data.get("duration_unit", "t"),
+                    api_token=api_token,
                 )
             elif action == "sell":
                 contract_id = request.data.get("contract_id")
                 if contract_id is None:
                     return Response({"error": "contract_id is required"}, status=status.HTTP_400_BAD_REQUEST)
-                result = close_position(contract_id)
+                result = close_position(contract_id, api_token=api_token)
             elif action == "positions":
-                result = get_positions()
+                result = get_positions(api_token=api_token)
             else:
                 return Response({"error": f"Unknown action: {action}"}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Add account mode indicator to all responses
+            if isinstance(result, dict):
+                result["is_demo"] = not is_real
 
             return Response(result)
         except Exception as exc:

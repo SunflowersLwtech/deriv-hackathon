@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import AppShell from "@/components/layout/AppShell";
+import { usePageState } from "@/hooks/usePageState";
 import BehaviorCard from "@/components/behavior/BehaviorCard";
 import DataCard from "@/components/ui/DataCard";
 import DisclaimerBadge from "@/components/ui/DisclaimerBadge";
@@ -9,6 +10,7 @@ import StatusBadge from "@/components/ui/StatusBadge";
 import DataSourceBadge from "@/components/ui/DataSourceBadge";
 import { cn } from "@/lib/utils";
 import { useTrades, useBehaviorPatterns, useSessionStats } from "@/hooks/useBehaviorData";
+import { useDerivAuth } from "@/hooks/useDerivAuth";
 import api from "@/lib/api";
 import type { ScenarioAnalysis } from "@/lib/api";
 
@@ -52,14 +54,16 @@ function scenarioIcon(name: string): string {
 }
 
 export default function BehaviorPage() {
-  const [activeScenario, setActiveScenario] = useState<string | null>(null);
+  const [activeScenario, setActiveScenario] = usePageState<string | null>("behavior:scenario", null);
   const [isLoadingScenario, setIsLoadingScenario] = useState(false);
-  const [scenarioAnalysis, setScenarioAnalysis] = useState<ScenarioAnalysis | null>(null);
+  const [scenarioAnalysis, setScenarioAnalysis] = usePageState<ScenarioAnalysis | null>("behavior:analysis", null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
-  const [scenarios, setScenarios] = useState<DemoScenario[]>([]);
+  const [scenarios, setScenarios] = usePageState<DemoScenario[]>("behavior:scenarios", []);
   const [isSyncingDeriv, setIsSyncingDeriv] = useState(false);
-  const [derivSyncResult, setDerivSyncResult] = useState<{ trades_synced: number; total_trades: number } | null>(null);
+  const [derivSyncResult, setDerivSyncResult] = usePageState<{ trades_synced: number; total_trades: number } | null>("behavior:syncResult", null);
   const [derivSyncError, setDerivSyncError] = useState<string | null>(null);
+
+  const { isConnected: isDerivConnected, connect: connectDeriv, isLoading: isDerivLoading } = useDerivAuth();
 
   const { data: trades, isUsingMock: tradesIsMock, isBackendOnline, refetch: refetchTrades } = useTrades();
   const { data: patterns, isUsingMock: patternsIsMock, refetch: refetchPatterns } = useBehaviorPatterns();
@@ -198,36 +202,85 @@ export default function BehaviorPage() {
 
         {/* Deriv Real Trade Sync */}
         <div className="bg-card border border-border rounded-sm p-5">
-          <h3 className="text-xs font-semibold tracking-wider text-muted uppercase mono-data mb-4">
-            SYNC REAL TRADES FROM DERIV
-          </h3>
-          <div className="flex items-center gap-4">
-            <button
-              onClick={handleSyncDeriv}
-              disabled={isSyncingDeriv}
-              className={cn(
-                "flex items-center gap-2 px-5 py-2.5 rounded-sm border text-left transition-all",
-                "border-cyan/50 bg-cyan/10 text-white hover:bg-cyan/20",
-                isSyncingDeriv && "opacity-50 cursor-not-allowed"
-              )}
-            >
-              <span className="text-lg">🔗</span>
-              <span className="text-xs font-medium mono-data tracking-wider">
-                {isSyncingDeriv ? "SYNCING..." : "SYNC FROM DERIV API"}
-              </span>
-            </button>
-            {derivSyncResult && (
-              <span className="text-xs text-profit mono-data">
-                {derivSyncResult.trades_synced} trades synced ({derivSyncResult.total_trades} total)
-              </span>
-            )}
-            {derivSyncError && (
-              <span className="text-xs text-loss mono-data">{derivSyncError}</span>
-            )}
+          <div className="flex items-center gap-3 mb-4">
+            <h3 className="text-xs font-semibold tracking-wider text-muted uppercase mono-data">
+              REAL TRADE DATA
+            </h3>
+            <span className={cn(
+              "px-2 py-0.5 rounded-sm text-[9px] mono-data font-semibold tracking-wider border",
+              isDerivConnected
+                ? "bg-profit/10 text-profit border-profit/30"
+                : "bg-warning/10 text-warning border-warning/30"
+            )}>
+              {isDerivLoading ? "CHECKING..." : isDerivConnected ? "DERIV CONNECTED" : "DEMO DATA"}
+            </span>
           </div>
-          <p className="text-[10px] text-muted-foreground mt-2 mono-data">
-            Pulls real trade history from your Deriv account using DERIV_TOKEN
-          </p>
+
+          {isDerivConnected ? (
+            <>
+              <p className="text-[11px] text-muted mono-data mb-3">
+                Analyzing your real trading behavior from your connected Deriv account.
+              </p>
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={handleSyncDeriv}
+                  disabled={isSyncingDeriv}
+                  className={cn(
+                    "flex items-center gap-2 px-5 py-2.5 rounded-sm border text-left transition-all",
+                    "border-cyan/50 bg-cyan/10 text-white hover:bg-cyan/20",
+                    isSyncingDeriv && "opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  <span className="text-xs font-medium mono-data tracking-wider">
+                    {isSyncingDeriv ? "SYNCING..." : "SYNC TRADES"}
+                  </span>
+                </button>
+                {derivSyncResult && (
+                  <span className="text-xs text-profit mono-data">
+                    {derivSyncResult.trades_synced} new trades synced ({derivSyncResult.total_trades} total)
+                  </span>
+                )}
+                {derivSyncError && (
+                  <span className="text-xs text-loss mono-data">{derivSyncError}</span>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-[11px] text-muted mono-data mb-3">
+                Analyzing demo trading data. Connect your Deriv account for real behavioral insights.
+              </p>
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={connectDeriv}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-sm border border-accent/50 bg-accent/10 text-white hover:bg-accent/20 transition-all"
+                >
+                  <span className="text-xs font-medium mono-data tracking-wider">CONNECT DERIV ACCOUNT</span>
+                </button>
+                <button
+                  onClick={handleSyncDeriv}
+                  disabled={isSyncingDeriv}
+                  className={cn(
+                    "flex items-center gap-2 px-5 py-2.5 rounded-sm border text-left transition-all",
+                    "border-border bg-surface text-muted hover:text-white hover:border-muted",
+                    isSyncingDeriv && "opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  <span className="text-xs font-medium mono-data tracking-wider">
+                    {isSyncingDeriv ? "SYNCING..." : "SYNC (ENV TOKEN)"}
+                  </span>
+                </button>
+                {derivSyncResult && (
+                  <span className="text-xs text-profit mono-data">
+                    {derivSyncResult.trades_synced} trades synced ({derivSyncResult.total_trades} total)
+                  </span>
+                )}
+                {derivSyncError && (
+                  <span className="text-xs text-loss mono-data">{derivSyncError}</span>
+                )}
+              </div>
+            </>
+          )}
         </div>
 
         {/* AI Scenario Analysis Results */}

@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+import QueryProvider from "@/providers/QueryProvider";
+import ChatProvider from "@/providers/ChatProvider";
+import "@/lib/pageCache";
 import "./globals.css";
 
 const inter = Inter({
@@ -31,7 +34,11 @@ export default function RootLayout({
   return (
     <html lang="en" className={`dark ${inter.variable} ${jetbrainsMono.variable}`}>
       <body className="antialiased">
-        {children}
+        <QueryProvider>
+          <ChatProvider>
+            {children}
+          </ChatProvider>
+        </QueryProvider>
       </body>
     </html>
   );

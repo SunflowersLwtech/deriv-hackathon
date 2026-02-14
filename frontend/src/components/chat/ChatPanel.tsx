@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import ChatMessage from "./ChatMessage";
 import ThinkingProcess from "@/components/ai/ThinkingProcess";
-import { useStreamingChat } from "@/hooks/useStreamingChat";
+import { useChatContext } from "@/providers/ChatProvider";
 
 export default function ChatPanel() {
   const {
@@ -13,7 +13,8 @@ export default function ChatPanel() {
     streamStatus,
     currentToolCall,
     sendMessage,
-  } = useStreamingChat();
+    clearHistory,
+  } = useChatContext();
 
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -93,6 +94,21 @@ export default function ChatPanel() {
       {/* Input Area */}
       <div className="border-t border-border bg-card/50 p-4 shrink-0">
         <div className="flex gap-2.5 items-end">
+          <button
+            onClick={clearHistory}
+            disabled={isProcessing || messages.length <= 1}
+            title="Clear conversation"
+            className={cn(
+              "p-2.5 rounded-lg transition-all duration-200 shrink-0",
+              !isProcessing && messages.length > 1
+                ? "text-muted-foreground hover:text-loss hover:bg-loss/10"
+                : "text-muted-foreground/30 cursor-not-allowed"
+            )}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 6h18" /><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2" /><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+            </svg>
+          </button>
           <textarea
             ref={textareaRef}
             value={input}

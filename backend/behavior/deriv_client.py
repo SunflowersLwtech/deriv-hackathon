@@ -30,17 +30,18 @@ class DerivClient:
     - Syncing trades to database
     """
     
-    def __init__(self, app_id: Optional[str] = None):
+    def __init__(self, app_id: Optional[str] = None, api_token: Optional[str] = None):
         """
         Initialize Deriv client.
-        
+
         Args:
             app_id: Deriv app ID (from https://developers.deriv.com/)
+            api_token: Per-user Deriv API token (falls back to DERIV_TOKEN env var)
         """
         self.app_id = app_id or os.environ.get('DERIV_APP_ID', '')
         if not self.app_id:
             raise ValueError("DERIV_APP_ID is required. Get it from https://developers.deriv.com/")
-        self.default_api_token = os.environ.get('DERIV_TOKEN', '')
+        self.default_api_token = api_token or os.environ.get('DERIV_TOKEN', '')
         
         # Deriv WebSocket endpoints
         self.ws_url = f"wss://ws.derivws.com/websockets/v3?app_id={self.app_id}"

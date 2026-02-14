@@ -21,9 +21,9 @@ class DerivCopyTradingClient:
     - copy_stop: stop copying a trader
     """
 
-    def __init__(self, app_id: Optional[str] = None):
+    def __init__(self, app_id: Optional[str] = None, api_token: Optional[str] = None):
         self.app_id = app_id or os.environ.get("DERIV_APP_ID", "")
-        self.default_api_token = os.environ.get("DERIV_TOKEN", "")
+        self.default_api_token = api_token or os.environ.get("DERIV_TOKEN", "")
         self.ws_url = f"wss://ws.derivws.com/websockets/v3?app_id={self.app_id}"
 
     def _resolve_api_token(self, api_token: Optional[str] = None) -> str:

@@ -351,11 +351,21 @@ class ApiClient {
     });
   }
 
-  // Deriv trade sync
+  // Deriv trade sync (legacy endpoint via ViewSet action)
   async syncDerivTrades(userId?: string, daysBack?: number) {
     return this.request<DerivSyncResponse>("/behavior/trades/sync_deriv/", {
       method: "POST",
       body: { user_id: userId, days_back: daysBack },
+      timeoutMs: TIMEOUT_LLM,
+    });
+  }
+
+  // Dedicated sync-trades endpoint (Phase 3)
+  async syncRealTrades(userId?: string, daysBack?: number) {
+    return this.request<DerivSyncResponse>("/behavior/sync-trades/", {
+      method: "POST",
+      body: { user_id: userId, days_back: daysBack },
+      requiresAuth: true,
       timeoutMs: TIMEOUT_LLM,
     });
   }
@@ -440,17 +450,19 @@ class ApiClient {
     });
   }
 
-  async startCopyTrading(traderId: string, apiToken: string) {
+  async startCopyTrading(traderId: string) {
     return this.request<CopyTradeActionResponse>("/agents/copytrading/", {
       method: "POST",
-      body: { action: "start", trader_id: traderId, api_token: apiToken },
+      body: { action: "start", trader_id: traderId },
+      requiresAuth: true,
     });
   }
 
-  async stopCopyTrading(traderId: string, apiToken: string) {
+  async stopCopyTrading(traderId: string) {
     return this.request<CopyTradeActionResponse>("/agents/copytrading/", {
       method: "POST",
-      body: { action: "stop", trader_id: traderId, api_token: apiToken },
+      body: { action: "stop", trader_id: traderId },
+      requiresAuth: true,
     });
   }
 
@@ -526,6 +538,41 @@ class ApiClient {
       method: "POST",
       body: { script_name: name },
       timeoutMs: TIMEOUT_PIPELINE,
+    });
+  }
+
+  // ─── Deriv OAuth / Account endpoints ─────────────────────────────────
+  async saveDerivOAuthTokens(accounts: Array<{ login_id: string; token: string; currency: string }>) {
+    return this.request<{ accounts: DerivAccount[] }>("/deriv-auth/callback/", {
+      method: "POST",
+      body: { accounts },
+      requiresAuth: true,
+    });
+  }
+
+  async getDerivAccounts() {
+    return this.request<{ accounts: DerivAccount[] }>("/deriv-auth/accounts/", {
+      requiresAuth: true,
+    });
+  }
+
+  async deleteDerivAccount(id: string) {
+    return this.request<{ detail: string }>(`/deriv-auth/accounts/${id}/`, {
+      method: "DELETE",
+      requiresAuth: true,
+    });
+  }
+
+  async setDefaultDerivAccount(id: string) {
+    return this.request<DerivAccount>(`/deriv-auth/accounts/${id}/set-default/`, {
+      method: "POST",
+      requiresAuth: true,
+    });
+  }
+
+  async getDerivConnectionStatus() {
+    return this.request<DerivConnectionStatus>("/deriv-auth/status/", {
+      requiresAuth: true,
     });
   }
 
@@ -936,7 +983,10 @@ export interface DerivSyncResponse {
   trades_synced: number;
   trades_updated: number;
   total_trades: number;
-  analysis_summary: Record<string, unknown> | null;
+  real_trades?: number;
+  demo_trades?: number;
+  is_demo?: boolean;
+  analysis_summary?: Record<string, unknown> | null;
 }
 
 export interface PipelineResponse {
@@ -1107,6 +1157,8 @@ export interface TradingTwinResult {
   narrative: string;
   key_insight: string;
   analysis_period_days: number;
+  is_real_data?: boolean;
+  data_source?: "real" | "demo";
   generated_at: string;
 }
 
@@ -1149,6 +1201,7 @@ export interface TraderStatsResponse {
     monthly_profitable_trades: number;
     active_since: string;
   };
+  is_demo?: boolean;
   error?: string;
 }
 
@@ -1159,6 +1212,7 @@ export interface TraderRecommendationResponse {
     reasons: string[];
   }>;
   disclaimer: string;
+  is_demo?: boolean;
   error?: string;
 }
 
@@ -1168,6 +1222,7 @@ export interface CopyTradingListResponse {
   total_count: number;
   source?: string;
   disclaimer?: string;
+  is_demo?: boolean;
   error?: string;
 }
 
@@ -1272,6 +1327,24 @@ export interface DemoRunResult {
   total_duration_ms: number;
   opening_narration?: string;
   closing_narration?: string;
+}
+
+// ─── Deriv Auth types ────────────────────────────────────────────────
+
+export interface DerivAccount {
+  id: string;
+  deriv_login_id: string;
+  account_type: "real" | "demo";
+  currency: string;
+  is_active: boolean;
+  is_default: boolean;
+  created_at: string;
+}
+
+export interface DerivConnectionStatus {
+  connected: boolean;
+  account_count: number;
+  default_account: DerivAccount | null;
 }
 
 // Singleton instance
