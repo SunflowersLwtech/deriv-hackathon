@@ -120,8 +120,8 @@ export default function DashboardPage() {
           {/* ── Overview Tab ── */}
           {activeTab === "overview" && (
             <div className="space-y-6">
-              {/* All stats in a single grid for perfect column alignment */}
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-x-4 gap-y-5">
+              {/* Stats row - 3 primary cards + 2 secondary */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                 <DataCard
                   title="Portfolio Value"
                   value={`$${metrics.portfolioValue.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
@@ -296,8 +296,7 @@ export default function DashboardPage() {
           {/* ── Positions Tab ── */}
           {activeTab === "positions" && (
             <div className="space-y-6">
-              {/* All stats in a single grid for perfect column alignment */}
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-x-4 gap-y-5">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                 <DataCard
                   title="Total Trades"
                   value={String(trades.length)}

@@ -257,14 +257,14 @@ export default function PnLChart({
     <div className={cn("bg-card border border-border rounded-md p-6 flex flex-col", className)}>
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h3 className="text-lg font-semibold tracking-wider text-muted uppercase mono-data">{title}</h3>
-          <div className="flex items-baseline gap-3 mt-2">
-            <span className={cn("text-3xl font-bold mono-data", pnl > 0 ? "text-profit" : pnl < 0 ? "text-loss" : "text-white")}>
-              {currentValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
+          <h3 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase mono-data">{title}</h3>
+          <div className="flex items-baseline gap-3 mt-2 flex-wrap">
+            <span className={cn("text-2xl font-bold mono-data", pnl > 0 ? "text-profit" : pnl < 0 ? "text-loss" : "text-white")}>
+              {currentValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
             <span
               className={cn(
-                "text-base mono-data font-semibold",
+                "text-sm mono-data font-semibold",
                 pnl > 0 ? "text-profit glow-green" : pnl < 0 ? "text-loss glow-red" : "text-white"
               )}
             >
@@ -280,7 +280,7 @@ export default function PnLChart({
         </div>
       </div>
 
-      <div className="flex-1 min-h-0" style={{ minHeight: height, height }}>{chartBody}</div>
+      <div style={{ width: "100%", height }}>{chartBody}</div>
     </div>
   );
 }

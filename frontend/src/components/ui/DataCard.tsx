@@ -29,7 +29,7 @@ export default function DataCard({
     <div
       onClick={onClick}
       className={cn(
-        "bg-card border border-border rounded-md p-6 transition-all duration-200 overflow-hidden",
+        "bg-card border border-border rounded-md p-4 md:p-5 transition-all duration-200",
         onClick && "cursor-pointer card-hover",
         glow && trend === "up" && "border-profit/30",
         glow && trend === "down" && "border-loss/30",
@@ -62,8 +62,8 @@ export default function DataCard({
       {value !== undefined && (
         <div
           className={cn(
-            "font-bold mono-data tracking-tight truncate",
-            String(value).length > 10 ? "text-xl" : "text-3xl",
+            "font-bold mono-data tracking-tight",
+            String(value).length > 12 ? "text-lg" : String(value).length > 8 ? "text-xl" : "text-2xl",
             trend === "up" && "text-profit",
             trend === "down" && "text-loss",
             (trend === "neutral" || !trend) && "text-white"
@@ -77,8 +77,8 @@ export default function DataCard({
       {/* Subtitle */}
       {subtitle && (
         <p className={cn(
-          "text-xs mt-2 mono-data truncate",
-          trend === "up" ? "text-profit" : trend === "down" ? "text-loss" : "text-white"
+          "text-xs mt-1.5 mono-data",
+          trend === "up" ? "text-profit/80" : trend === "down" ? "text-loss/80" : "text-muted-foreground"
         )} title={subtitle}>{subtitle}</p>
       )}
 
