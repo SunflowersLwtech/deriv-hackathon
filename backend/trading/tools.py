@@ -185,14 +185,38 @@ def get_positions(api_token: str = None) -> Dict[str, Any]:
     """Get all currently open contract positions."""
     try:
         client = DerivClient(api_token=api_token)
-        contracts = client.get_open_contracts(api_token=api_token)
 
-        if isinstance(contracts, dict) and "error" in contracts:
-            return contracts
+        # Use `portfolio` to list open contracts. `proposal_open_contract` is
+        # inconsistent across contract types/accounts and has returned empty
+        # even when `portfolio` has active positions.
+        portfolio = client.fetch_portfolio(api_token=api_token) or {}
+        contracts = portfolio.get("contracts") or []
+
+        # Build reverse symbol lookup for display.
+        symbol_to_instrument = {}
+        for instrument, symbol in INSTRUMENT_TO_SYMBOL.items():
+            symbol_to_instrument.setdefault(symbol, instrument)
+
+        positions: List[Dict[str, Any]] = []
+        for c in contracts if isinstance(contracts, list) else []:
+            if not isinstance(c, dict):
+                continue
+            symbol = c.get("symbol") or c.get("underlying") or ""
+            instrument = symbol_to_instrument.get(symbol, symbol or "UNKNOWN")
+            positions.append({
+                "contract_id": c.get("contract_id"),
+                "instrument": instrument,
+                "contract_type": c.get("contract_type", ""),
+                "buy_price": float(c.get("buy_price", 0) or 0),
+                "current_spot": float(c.get("current_spot", 0) or 0),
+                "profit": float(c.get("profit", 0) or 0),
+                "is_valid_to_sell": bool(c.get("is_valid_to_sell") in (1, True, "1")),
+                "longcode": c.get("longcode", ""),
+            })
 
         return {
-            "positions": contracts if isinstance(contracts, list) else [],
-            "count": len(contracts) if isinstance(contracts, list) else 0,
+            "positions": positions,
+            "count": len(positions),
             "disclaimer": DEMO_DISCLAIMER,
         }
 

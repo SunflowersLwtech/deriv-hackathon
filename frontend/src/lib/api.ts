@@ -375,6 +375,7 @@ class ApiClient {
     return this.request<DerivSyncResponse>("/behavior/trades/sync_deriv/", {
       method: "POST",
       body: { user_id: userId, days_back: daysBack },
+      requiresAuth: true,
       timeoutMs: TIMEOUT_LLM,
     });
   }
