@@ -2,14 +2,13 @@
 
 import { cn } from "@/lib/utils";
 import { useTickerData } from "@/hooks/useMarketData";
-import DataSourceBadge from "@/components/ui/DataSourceBadge";
 
 export default function TickerBar() {
-  const { tickers, isUsingMock } = useTickerData(10000);
+  const { tickers } = useTickerData(10000);
   const renderTickers = [...tickers, ...tickers]; // Duplicate for seamless scroll
 
   return (
-    <div className="bg-[#1e222d] border-b border-[#2a2e39] overflow-hidden h-10 flex items-center relative">
+    <div className="bg-[#1e222d] border-b border-[#2a2e39] overflow-hidden h-10 flex items-center">
       {renderTickers.length > 0 ? (
         <div className="animate-ticker flex items-center gap-0 whitespace-nowrap">
         {renderTickers.map((ticker, i) => (
@@ -44,10 +43,6 @@ export default function TickerBar() {
       ) : (
         <div className="px-4 text-[12px] text-[#787b86] mono-data">No live ticker data available.</div>
       )}
-      {/* Data source indicator - positioned absolute right */}
-      <div className="absolute right-2 top-1/2 -translate-y-1/2 z-10">
-        <DataSourceBadge isUsingMock={isUsingMock} />
-      </div>
     </div>
   );
 }
