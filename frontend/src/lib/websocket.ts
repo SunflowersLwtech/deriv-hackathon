@@ -76,7 +76,19 @@ export class TradeIQWebSocket {
   private status: ConnectionStatus = "disconnected";
 
   constructor(path: string = "/chat/", userId?: string) {
-    const wsBase = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/ws";
+    let wsBase = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/ws";
+
+    // Auto-detect production: if page is on a real domain but wsBase still
+    // points to localhost, derive wss:// URL from the current origin.
+    if (typeof window !== "undefined") {
+      const { hostname, protocol, host } = window.location;
+      const isLocal = hostname === "localhost" || hostname === "127.0.0.1";
+      if (!isLocal && wsBase.includes("localhost")) {
+        const wsProtocol = protocol === "https:" ? "wss:" : "ws:";
+        wsBase = `${wsProtocol}//${host}/ws`;
+      }
+    }
+
     const query = userId ? `?user_id=${encodeURIComponent(userId)}` : "";
     this.url = `${wsBase}${path}${query}`;
   }

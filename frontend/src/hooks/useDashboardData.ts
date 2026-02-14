@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 import { useApiWithFallback } from "./useApiWithFallback";
-import api from "@/lib/api";
+import api, { getApiBase } from "@/lib/api";
 
 export interface DashboardMetrics {
   portfolioValue: number;
@@ -76,7 +76,7 @@ export function useDashboardMetrics() {
 export function useBackendHealth() {
   const checkHealth = useCallback(async () => {
     const res = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/behavior/profiles/`,
+      `${getApiBase()}/behavior/profiles/`,
       { method: "GET", signal: AbortSignal.timeout(3000) }
     );
     if (!res.ok) throw new Error("Backend unhealthy");

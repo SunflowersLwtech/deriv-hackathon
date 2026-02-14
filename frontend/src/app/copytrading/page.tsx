@@ -259,7 +259,9 @@ export default function CopyTradingPage() {
             {statsLoading ? (
               <LoadingDots />
             ) : traderStats?.stats ? (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <>
+              {/* All stats in a single grid for perfect column alignment */}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-x-4 gap-y-5">
                 <div>
                   <div className="text-xs text-muted uppercase">Total Trades</div>
                   <div className="text-lg font-bold mono-data text-white">{traderStats.stats.total_trades}</div>
@@ -279,16 +281,13 @@ export default function CopyTradingPage() {
                   <div className="text-lg font-bold mono-data text-profit">{traderStats.stats.monthly_profitable_trades}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-muted uppercase">Active Since</div>
-                  <div className="text-sm font-bold mono-data text-white">{traderStats.stats.active_since || "N/A"}</div>
-                </div>
-                <div>
                   <div className="text-xs text-muted uppercase">Performance</div>
                   <div className="text-lg font-bold mono-data text-profit">
                     {((traderStats.stats.performance_probability || 0) * 100).toFixed(1)}%
                   </div>
                 </div>
               </div>
+              </>
             ) : (
               <p className="text-muted text-sm">No stats available.</p>
             )}

@@ -15,12 +15,15 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Build-time env vars (overridable via --build-arg)
-ARG NEXT_PUBLIC_API_URL=http://localhost:8000/api
-ARG NEXT_PUBLIC_WS_URL=ws://localhost:8000/ws
+# Build-time env vars (overridable via --build-arg).
+# API/WS URLs are intentionally left empty so the runtime auto-detection
+# in api.ts / websocket.ts kicks in (uses window.location.origin in
+# production and falls back to localhost only in local dev).
+ARG NEXT_PUBLIC_API_URL=
+ARG NEXT_PUBLIC_WS_URL=
 ARG NEXT_PUBLIC_SUPABASE_URL=https://placeholder.supabase.co
 ARG NEXT_PUBLIC_SUPABASE_ANON_KEY=placeholder
-ARG NEXT_PUBLIC_AUTH_CALLBACK_URL=http://localhost:3000/auth/callback
+ARG NEXT_PUBLIC_AUTH_CALLBACK_URL=
 
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
     NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL \

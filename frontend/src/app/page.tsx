@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import { useDashboardMetrics } from "@/hooks/useDashboardData";
 import { useMarketInsights } from "@/hooks/useMarketData";
 import { useApiWithFallback } from "@/hooks/useApiWithFallback";
-import api from "@/lib/api";
+import api, { getApiBase } from "@/lib/api";
 import type { Trade } from "@/lib/api";
 import { useCallback } from "react";
 
@@ -62,7 +62,7 @@ export default function DashboardPage() {
     setIsRefreshingInsights(true);
     try {
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/market/insights/refresh/`,
+        `${getApiBase()}/market/insights/refresh/`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -114,8 +114,8 @@ export default function DashboardPage() {
           {/* ── Overview Tab ── */}
           {activeTab === "overview" && (
             <div className="space-y-6">
-              {/* Key Metrics Row */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+              {/* All stats in a single grid for perfect column alignment */}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-x-4 gap-y-5">
                 <DataCard
                   title="Portfolio Value"
                   value={`$${metrics.portfolioValue.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
@@ -128,6 +128,13 @@ export default function DashboardPage() {
                   value={`${metrics.todayPnl > 0 ? "+" : ""}$${metrics.todayPnl.toFixed(2)}`}
                   subtitle={`${metrics.todayPnlPercent > 0 ? "+" : ""}${metrics.todayPnlPercent.toFixed(2)}%`}
                   trend={metrics.todayPnl > 0 ? "up" : metrics.todayPnl < 0 ? "down" : "neutral"}
+                  glow
+                />
+                <DataCard
+                  title="Total P&L"
+                  value={`${metrics.totalPnl > 0 ? "+" : ""}$${metrics.totalPnl.toFixed(2)}`}
+                  subtitle="All time"
+                  trend={metrics.totalPnl > 0 ? "up" : metrics.totalPnl < 0 ? "down" : "neutral"}
                   glow
                 />
                 <DataCard
@@ -283,8 +290,8 @@ export default function DashboardPage() {
           {/* ── Positions Tab ── */}
           {activeTab === "positions" && (
             <div className="space-y-6">
-              {/* Positions summary cards */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+              {/* All stats in a single grid for perfect column alignment */}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-x-4 gap-y-5">
                 <DataCard
                   title="Total Trades"
                   value={String(trades.length)}
@@ -299,9 +306,15 @@ export default function DashboardPage() {
                   glow
                 />
                 <DataCard
+                  title="Win Rate"
+                  value={trades.length > 0 ? `${((trades.filter((t) => Number(t.pnl) > 0).length / trades.length) * 100).toFixed(0)}%` : "—"}
+                  subtitle={`${trades.filter((t) => Number(t.pnl) > 0).length} winning`}
+                  trend="up"
+                />
+                <DataCard
                   title="Winning"
                   value={String(trades.filter((t) => Number(t.pnl) > 0).length)}
-                  subtitle={trades.length > 0 ? `${((trades.filter((t) => Number(t.pnl) > 0).length / trades.length) * 100).toFixed(0)}% win rate` : "—"}
+                  subtitle={trades.length > 0 ? `${((trades.filter((t) => Number(t.pnl) > 0).length / trades.length) * 100).toFixed(0)}% of total` : "—"}
                   trend="up"
                 />
                 <DataCard

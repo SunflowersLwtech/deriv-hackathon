@@ -5,20 +5,34 @@ function normalizeApiBase(url: string): string {
 }
 
 function resolveApiBase(): string {
-  const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
-  if (configured) {
-    return normalizeApiBase(configured);
-  }
-
+  // In the browser, detect production vs local automatically.
+  // This bypasses build-time NEXT_PUBLIC_API_URL when it still points to
+  // localhost but the page is served from a real domain (e.g. Render).
   if (typeof window !== "undefined") {
     const { origin, hostname } = window.location;
     const isLocal = hostname === "localhost" || hostname === "127.0.0.1";
+
     if (!isLocal) {
+      // Production: configured env var OR same-origin /api proxy
+      const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
+      if (configured && !configured.includes("localhost")) {
+        return normalizeApiBase(configured);
+      }
       return `${origin}/api`;
     }
   }
 
+  // Local dev: honour env var or default to localhost:8000
+  const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (configured) {
+    return normalizeApiBase(configured);
+  }
   return DEFAULT_LOCAL_API_BASE;
+}
+
+/** Public helper so components can build URLs against the resolved API base. */
+export function getApiBase(): string {
+  return resolveApiBase();
 }
 
 // API request timeout constants (milliseconds)
