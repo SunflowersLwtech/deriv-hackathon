@@ -39,16 +39,29 @@ export function useDemoFlow() {
     });
 
     try {
-      const result: DemoRunResult & { opening_line?: string; closing_line?: string } =
-        await api.runDemoScript(scriptName);
+      // Prefer V2 endpoint for championship_run, fallback to V1
+      let result: DemoRunResult & {
+        opening_line?: string;
+        closing_line?: string;
+        opening_narration?: string;
+        closing_narration?: string;
+      };
+
+      if (scriptName === "championship_run") {
+        result = await api.runDemoScriptV2(scriptName);
+      } else {
+        result = await api.runDemoScript(scriptName);
+      }
 
       setState((prev) => ({
         ...prev,
         isRunning: false,
         currentStep: result.steps.length,
         results: result.steps,
-        openingLine: result.opening_line || "",
-        closingLine: result.closing_line || "",
+        openingLine:
+          result.opening_narration || result.opening_line || "",
+        closingLine:
+          result.closing_narration || result.closing_line || "",
         totalDurationMs: result.total_duration_ms,
         error: result.status === "error" ? "Some steps failed" : null,
       }));

@@ -1258,6 +1258,9 @@ export interface DemoStepResult {
   duration_ms: number;
   narration?: string;
   wow_factor?: string;
+  act?: string;
+  visual_cue?: string;
+  fallback_used?: string;
 }
 
 export interface DemoRunResult {
@@ -1265,6 +1268,8 @@ export interface DemoRunResult {
   status: "success" | "partial" | "error";
   steps: DemoStepResult[];
   total_duration_ms: number;
+  opening_narration?: string;
+  closing_narration?: string;
 }
 
 // Singleton instance

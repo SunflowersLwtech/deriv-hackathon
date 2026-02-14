@@ -511,7 +511,10 @@ class DemoScriptListView(APIView):
 
     def get(self, request):
         from demo.demo_script import list_scripts
-        return Response({"scripts": list_scripts()})
+        from demo.demo_script_v2 import list_scripts_v2
+        # V2 scripts first (championship_run at the top)
+        all_scripts = list_scripts_v2() + list_scripts()
+        return Response({"scripts": all_scripts})
 
 
 class DemoScriptDetailView(APIView):

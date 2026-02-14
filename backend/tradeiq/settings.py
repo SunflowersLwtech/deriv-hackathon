@@ -157,14 +157,29 @@ FIXTURE_DIRS = [os.path.join(BASE_DIR, "fixtures")]
 # Channels – prefer Redis (Upstash), fall back to in-memory
 _redis_url = os.environ.get("REDIS_URL", "")
 if _redis_url:
-    CHANNEL_LAYERS = {
-        "default": {
-            "BACKEND": "channels_redis.core.RedisChannelLayer",
-            "CONFIG": {
-                "hosts": [_redis_url],
+    try:
+        import channels_redis  # noqa: F401
+        CHANNEL_LAYERS = {
+            "default": {
+                "BACKEND": "channels_redis.core.RedisChannelLayer",
+                "CONFIG": {
+                    "hosts": [_redis_url],
+                },
             },
-        },
-    }
+        }
+    except ImportError:
+        import sys
+        print(
+            "WARNING: REDIS_URL is set but channels-redis is not installed. "
+            "Falling back to InMemoryChannelLayer. "
+            "Install with: pip install channels-redis",
+            file=sys.stderr,
+        )
+        CHANNEL_LAYERS = {
+            "default": {
+                "BACKEND": "channels.layers.InMemoryChannelLayer",
+            },
+        }
 else:
     CHANNEL_LAYERS = {
         "default": {

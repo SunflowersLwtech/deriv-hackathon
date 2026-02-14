@@ -15,6 +15,7 @@ const navLinks = [
   { href: "/trading", label: "TRADE" },
   { href: "/content", label: "CONTENT" },
   { href: "/pipeline", label: "AGENTS" },
+  { href: "/demo", label: "DEMO" },
 ];
 
 export default function Navbar() {

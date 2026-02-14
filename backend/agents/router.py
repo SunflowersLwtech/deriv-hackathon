@@ -21,6 +21,7 @@ from agents.tools_registry import (
 )
 from agents.compliance import check_compliance, append_disclaimer
 import json
+import re
 
 
 def route_query(
@@ -136,6 +137,19 @@ def route_query(
             final_response = message.content
 
         final_response = final_response or ""
+        # Strip DeepSeek raw function-call XML that sometimes leaks
+        # into content instead of using the tool_calls API field
+        final_response = re.sub(
+            r'<[｜\|]DSML[｜\|]function_calls>.*?</[｜\|]DSML[｜\|]function_calls>',
+            '',
+            final_response,
+            flags=re.DOTALL,
+        ).strip()
+        if not final_response:
+            final_response = (
+                "I wasn't able to generate a complete analysis. "
+                "Please try rephrasing your question."
+            )
         passed, violations = check_compliance(final_response)
         if not passed:
             final_response = (

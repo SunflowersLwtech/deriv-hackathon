@@ -109,8 +109,8 @@ def _check_demo_data() -> Dict[str, Any]:
 
 def _check_bluesky() -> Dict[str, Any]:
     try:
-        bsky_handle = os.environ.get("BSKY_HANDLE", "")
-        bsky_password = os.environ.get("BSKY_APP_PASSWORD", "")
+        bsky_handle = os.environ.get("BLUESKY_HANDLE", "") or os.environ.get("BSKY_HANDLE", "")
+        bsky_password = os.environ.get("BLUESKY_APP_PASSWORD", "") or os.environ.get("BSKY_APP_PASSWORD", "")
         if not bsky_handle or not bsky_password:
             return {"status": "error", "error": "BSKY credentials not configured"}
         return {"status": "ok"}
