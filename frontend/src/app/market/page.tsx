@@ -57,20 +57,20 @@ function getInstrumentIcon(symbol: string): ReactNode {
 // ── Timeline config ──────────────────────────────────────────────
 type TimelineOption = "1H" | "6H" | "1D" | "3D" | "1W" | "2W" | "1M" | "3M" | "6M" | "1Y";
 
-const TIMELINE_OPTIONS: Record<TimelineOption, { label: string; timeframe: string; candles: number }> = {
-  "1H": { label: "1H", timeframe: "1m", candles: 60 },
-  "6H": { label: "6H", timeframe: "5m", candles: 72 },
-  "1D": { label: "1D", timeframe: "15m", candles: 96 },
-  "3D": { label: "3D", timeframe: "30m", candles: 144 },
-  "1W": { label: "1W", timeframe: "1h", candles: 168 },
-  "2W": { label: "2W", timeframe: "2h", candles: 168 },
-  "1M": { label: "1M", timeframe: "4h", candles: 180 },
-  "3M": { label: "3M", timeframe: "1d", candles: 90 },
-  "6M": { label: "6M", timeframe: "1d", candles: 180 },
-  "1Y": { label: "1Y", timeframe: "1d", candles: 365 },
+const TIMELINE_OPTIONS: Record<TimelineOption, { timeframe: string; candles: number }> = {
+  "1H": { timeframe: "1m", candles: 60 },
+  "6H": { timeframe: "5m", candles: 72 },
+  "1D": { timeframe: "15m", candles: 96 },
+  "3D": { timeframe: "30m", candles: 144 },
+  "1W": { timeframe: "1h", candles: 168 },
+  "2W": { timeframe: "2h", candles: 168 },
+  "1M": { timeframe: "4h", candles: 180 },
+  "3M": { timeframe: "1d", candles: 90 },
+  "6M": { timeframe: "1d", candles: 180 },
+  "1Y": { timeframe: "1d", candles: 365 },
 };
 
-const TIMELINE_ORDER: TimelineOption[] = ["1H", "6H", "1D", "3D", "1W", "2W", "1M", "3M", "6M", "1Y"];
+const TIMELINE_KEYS = Object.keys(TIMELINE_OPTIONS) as TimelineOption[];
 
 export default function MarketPage() {
   const { data: availableInstruments } = useInstrumentUniverse();
@@ -153,6 +153,7 @@ export default function MarketPage() {
   }, [sentiment]);
 
   const trendColor = technicals?.trend === "bullish" ? "text-profit" : technicals?.trend === "bearish" ? "text-loss" : "text-warning";
+  const trendArrow = technicals?.trend === "bullish" ? "\u25B2" : technicals?.trend === "bearish" ? "\u25BC" : "\u2014";
 
   return (
     <AppShell>
@@ -197,50 +198,26 @@ export default function MarketPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left: Chart + Timeline */}
-          <div className="lg:col-span-2 space-y-4">
+          {/* Left: Chart */}
+          <div className="lg:col-span-2 flex flex-col gap-3">
             <div className="flex-1 min-h-[400px]">
-              {showTradingView ? (
-                <TradingViewWidget
-                  symbol={selectedInstrument}
-                  interval={selectedTimeline}
-                  className="h-full"
-                />
-              ) : (
-                <PnLChart
-                  key={`${selectedInstrument}-${selectedTimeline}`}
-                  title={`${selectedInstrument || "MARKET"} PRICE CHART`}
-                  className="h-full"
-                  instrument={selectedInstrument || undefined}
-                  timeframe={timelineConfig.timeframe}
-                  candles={timelineConfig.candles}
-                  timeline={selectedTimeline}
-                  onLoadingChange={setIsChartLoading}
-                />
-              )}
-            </div>
-
-            {/* Timeline Controls */}
-            <div className="flex items-center justify-center gap-2 flex-wrap">
-              {TIMELINE_ORDER.map((timeline) => (
-                <button
-                  key={timeline}
-                  onClick={() => setSelectedTimeline(timeline)}
-                  disabled={isChartLoading}
-                  className={cn(
-                    "px-4 py-2 rounded-lg text-xs font-bold tracking-widest mono-data transition-all duration-200",
-                    selectedTimeline === timeline
-                      ? "bg-white text-black shadow-lg border-2 border-white"
-                      : "bg-card text-muted-foreground border border-border hover:text-white hover:border-white/40 hover:bg-surface",
-                    isChartLoading && "opacity-40 cursor-not-allowed pointer-events-none"
-                  )}
-                >
-                  {TIMELINE_OPTIONS[timeline].label}
-                  {isChartLoading && selectedTimeline === timeline && (
-                    <span className="ml-1.5 inline-block w-2.5 h-2.5 border-2 border-black border-t-transparent rounded-full animate-spin" />
-                  )}
-                </button>
-              ))}
+            {showTradingView ? (
+              <TradingViewWidget
+                symbol={selectedInstrument}
+                interval={selectedTimeline}
+                className="h-full"
+              />
+            ) : (
+              <PnLChart
+                title={`${selectedInstrument || "MARKET"} PRICE CHART`}
+                className="h-full"
+                instrument={selectedInstrument || undefined}
+                timeframe={timelineConfig.timeframe}
+                candles={timelineConfig.candles}
+                timeline={selectedTimeline}
+                onLoadingChange={setIsChartLoading}
+              />
+            )}
             </div>
           </div>
 
@@ -288,49 +265,25 @@ export default function MarketPage() {
             </div>
 
             {/* Trend + Insights */}
-            <div
-              className={cn(
-                "bg-card border rounded-md p-6 transition-all duration-200 flex flex-col flex-1 min-h-0 overflow-hidden",
-                technicals?.trend === "bullish" ? "border-profit/30" : technicals?.trend === "bearish" ? "border-loss/30" : "border-border"
-              )}
-            >
-              <div className="flex items-center justify-between mb-2.5 shrink-0">
-                <h3 className="text-xs font-semibold tracking-wider text-muted uppercase mono-data">TREND</h3>
-                <span
-                  className={cn(
-                    "text-xs mono-data font-semibold",
-                    trendColor
-                  )}
-                >
-                  {technicals?.trend === "bullish" ? "▲" : technicals?.trend === "bearish" ? "▼" : "—"}
-                </span>
+            <div className="bg-card border border-border rounded-md p-6 flex-1 min-h-0 flex flex-col">
+              <div className="flex items-center justify-between mb-3 shrink-0">
+                <h3 className="text-sm font-semibold tracking-wider text-muted uppercase mono-data">TREND</h3>
+                <div className="flex items-center gap-2">
+                  <span className={cn("text-lg font-bold", trendColor)}>{trendArrow}</span>
+                  <span className={cn("text-sm font-semibold mono-data", trendColor)}>
+                    {(technicals?.trend || "neutral").toUpperCase()}
+                  </span>
+                </div>
               </div>
-              <div
-                className={cn(
-                  "text-3xl font-bold mono-data tracking-tight shrink-0",
-                  trendColor
-                )}
-              >
-                {(technicals?.trend || "neutral").toUpperCase()}
-              </div>
-              <p className="text-[10px] text-muted mt-1 shrink-0">{technicals?.summary || "No technical summary available."}</p>
-
+              <p className="text-[10px] text-muted mono-data mb-3 shrink-0">{technicals?.summary || "No technical summary available."}</p>
               {technicals?.insights && technicals.insights.length > 0 && (
-                <div className="mt-3 border-t border-border pt-3 flex-1 min-h-0 flex flex-col overflow-hidden">
-                  <h4 className="text-[10px] font-semibold tracking-wider text-muted uppercase mono-data mb-2 shrink-0">
-                    WHY {(technicals?.trend || "neutral").toUpperCase()}?
-                  </h4>
-                  <div className="overflow-y-auto pr-1 space-y-2.5 flex-1 min-h-0">
-                    {technicals.insights.map((insight, i) => (
-                      <div key={i} className="flex gap-2">
-                        <span className={cn(
-                          "mt-1 w-1.5 h-1.5 rounded-full shrink-0",
-                          technicals.trend === "bullish" ? "bg-profit" : technicals.trend === "bearish" ? "bg-loss" : "bg-muted"
-                        )} />
-                        <p className="text-[11px] text-muted-foreground leading-relaxed mono-data">{insight}</p>
-                      </div>
-                    ))}
-                  </div>
+                <div className="overflow-y-auto flex-1 min-h-0 space-y-2 pr-1">
+                  {technicals.insights.map((insight, i) => (
+                    <div key={i} className="flex gap-2 text-[10px] leading-relaxed mono-data text-muted-foreground">
+                      <span className={cn("mt-0.5 shrink-0", i === 0 ? trendColor : "text-zinc-500")}>&#x25CF;</span>
+                      <span>{insight}</span>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
