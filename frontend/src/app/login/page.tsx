@@ -41,6 +41,7 @@ export default function LoginPage() {
   const [localError, setLocalError] = useState<string | null>(null);
   const [queryError, setQueryError] = useState<string | null>(null);
   const [queryErrorDescription, setQueryErrorDescription] = useState<string | null>(null);
+  const [nextPath, setNextPath] = useState<string | null>(null);
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
@@ -49,15 +50,27 @@ export default function LoginPage() {
       searchParams.get("oauth_error") ??
       searchParams.get("oauth_error_description");
     const nextErrorDescription = searchParams.get("oauth_error_description");
+    const requestedNext = searchParams.get("next");
+
+    // Only allow same-origin relative paths.
+    const safeNext =
+      requestedNext && requestedNext.startsWith("/") && !requestedNext.startsWith("//")
+        ? requestedNext
+        : null;
+
     setQueryError(nextQueryError);
     setQueryErrorDescription(nextErrorDescription);
+    setNextPath(safeNext);
   }, []);
 
   const handleGoogleLogin = async () => {
     setIsLoading(true);
     setLocalError(null);
     try {
-      const sameOriginCallback = `${window.location.origin}/auth/callback`;
+      const sameOriginCallbackBase = `${window.location.origin}/auth/callback`;
+      const sameOriginCallback = nextPath
+        ? `${sameOriginCallbackBase}?next=${encodeURIComponent(nextPath)}`
+        : sameOriginCallbackBase;
       const configuredCallback = process.env.NEXT_PUBLIC_AUTH_CALLBACK_URL?.trim();
       let redirectTo = sameOriginCallback;
 
@@ -65,7 +78,9 @@ export default function LoginPage() {
         try {
           const parsed = new URL(configuredCallback);
           if (parsed.origin === window.location.origin) {
-            redirectTo = parsed.toString();
+            // If a nextPath is present, prefer our explicit callback which
+            // includes the next=... parameter.
+            redirectTo = nextPath ? sameOriginCallback : parsed.toString();
           } else {
             console.warn(
               "NEXT_PUBLIC_AUTH_CALLBACK_URL origin differs from current origin. Falling back to same-origin callback.",

@@ -8,9 +8,16 @@ export default function AuthCallbackPage() {
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
+    const nextPath = searchParams.get("next");
     const code = searchParams.get("code");
     const oauthError = searchParams.get("error");
     const oauthErrorDescription = searchParams.get("error_description");
+
+    const isSafeNext = (value: string | null): value is string => {
+      if (!value) return false;
+      // Only allow same-origin relative paths to prevent open redirects.
+      return value.startsWith("/") && !value.startsWith("//");
+    };
 
     const redirectToLogin = (error: string, description?: string | null) => {
       const params = new URLSearchParams();
@@ -40,7 +47,7 @@ export default function AuthCallbackPage() {
         if (error) {
           const { data: sessionData } = await supabase.auth.getSession();
           if (sessionData?.session) {
-            router.replace("/");
+            router.replace(isSafeNext(nextPath) ? nextPath : "/");
             return;
           }
 
@@ -57,7 +64,7 @@ export default function AuthCallbackPage() {
           }
         }
 
-        router.replace("/");
+        router.replace(isSafeNext(nextPath) ? nextPath : "/");
       } catch (error) {
         console.error("Callback processing error:", error);
         redirectToLogin(

@@ -4,6 +4,66 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 
+const STORAGE_KEY = "tradeiq_deriv_oauth_accounts_v1";
+
+type DerivOAuthAccount = { login_id: string; token: string; currency: string };
+
+function isValidAccount(value: unknown): value is DerivOAuthAccount {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.login_id === "string" &&
+    typeof v.token === "string" &&
+    typeof v.currency === "string"
+  );
+}
+
+function parseAccountsFromQuery(params: URLSearchParams): DerivOAuthAccount[] {
+  const accounts: DerivOAuthAccount[] = [];
+  for (let i = 1; ; i++) {
+    const loginId = params.get(`acct${i}`);
+    const token = params.get(`token${i}`);
+    const currency = params.get(`cur${i}`) || "USD";
+
+    if (!loginId || !token) break;
+
+    accounts.push({
+      login_id: loginId,
+      token,
+      currency: currency.toUpperCase(),
+    });
+  }
+  return accounts;
+}
+
+function loadAccountsFromSessionStorage(): DerivOAuthAccount[] {
+  try {
+    const raw = window.sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(isValidAccount);
+  } catch {
+    return [];
+  }
+}
+
+function storeAccountsToSessionStorage(accounts: DerivOAuthAccount[]) {
+  try {
+    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(accounts));
+  } catch {
+    // ignore storage quota / disabled storage
+  }
+}
+
+function clearStoredAccounts() {
+  try {
+    window.sessionStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 export default function DerivOAuthCallbackPage() {
   const router = useRouter();
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
@@ -14,20 +74,14 @@ export default function DerivOAuthCallbackPage() {
       try {
         const params = new URLSearchParams(window.location.search);
 
-        // Parse acct1/token1/cur1, acct2/token2/cur2, ... from URL
-        const accounts: Array<{ login_id: string; token: string; currency: string }> = [];
-        for (let i = 1; ; i++) {
-          const loginId = params.get(`acct${i}`);
-          const token = params.get(`token${i}`);
-          const currency = params.get(`cur${i}`) || "USD";
-
-          if (!loginId || !token) break;
-
-          accounts.push({
-            login_id: loginId,
-            token: token,
-            currency: currency.toUpperCase(),
-          });
+        // Parse acct1/token1/cur1, acct2/token2/cur2, ... from URL.
+        // If the user refreshes after we clean the URL, we can still recover
+        // the accounts from sessionStorage and continue.
+        let accounts = parseAccountsFromQuery(params);
+        if (accounts.length > 0) {
+          storeAccountsToSessionStorage(accounts);
+        } else {
+          accounts = loadAccountsFromSessionStorage();
         }
 
         if (accounts.length === 0) {
@@ -43,7 +97,23 @@ export default function DerivOAuthCallbackPage() {
           // ignore
         }
 
+        // If user isn't signed in yet, send them to /login and come back here
+        // after Google OAuth. We'll resume from sessionStorage.
+        try {
+          const { createClient } = await import("@/lib/supabase/client");
+          const supabase = createClient();
+          const { data } = await supabase.auth.getSession();
+          if (!data.session) {
+            router.replace(`/login?next=${encodeURIComponent("/auth/deriv/callback")}`);
+            return;
+          }
+        } catch {
+          // If supabase client can't be created for some reason, fall back to
+          // attempting the save; backend will return a clear 401.
+        }
+
         await api.saveDerivOAuthTokens(accounts);
+        clearStoredAccounts();
         setStatus("success");
 
         // Redirect to trading page after a brief success message
@@ -51,7 +121,7 @@ export default function DerivOAuthCallbackPage() {
           router.replace("/trading");
         }, 2000);
       } catch (err) {
-        console.error("Deriv OAuth callback error:", err);
+        console.error("Deriv OAuth callback error:", err instanceof Error ? err.message : err);
         setStatus("error");
         setErrorMessage(
           err instanceof Error ? err.message : "Failed to connect Deriv account."
@@ -138,12 +208,20 @@ export default function DerivOAuthCallbackPage() {
               Connection Failed
             </p>
             <p className="text-[11px] text-loss mono-data mb-4">{errorMessage}</p>
-            <button
-              onClick={() => router.replace("/login")}
-              className="px-4 py-2 rounded-sm border border-border bg-surface text-white text-[11px] mono-data hover:bg-surface-hover transition-colors"
-            >
-              Back to Login
-            </button>
+            <div className="flex items-center justify-center gap-2">
+              <button
+                onClick={() => window.location.reload()}
+                className="px-4 py-2 rounded-sm border border-border bg-surface text-white text-[11px] mono-data hover:bg-surface-hover transition-colors"
+              >
+                Retry
+              </button>
+              <button
+                onClick={() => router.replace(`/login?next=${encodeURIComponent("/auth/deriv/callback")}`)}
+                className="px-4 py-2 rounded-sm border border-border bg-surface text-white text-[11px] mono-data hover:bg-surface-hover transition-colors"
+              >
+                Back to Login
+              </button>
+            </div>
           </>
         )}
       </div>
