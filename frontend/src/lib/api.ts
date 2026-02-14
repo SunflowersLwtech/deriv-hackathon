@@ -223,7 +223,7 @@ class ApiClient {
       this.request<BatchAnalysis>("/behavior/trades/analyze_batch/", {
         method: "POST",
         body: { user_id: userId, hours },
-        requiresAuth: true,
+        requiresAuth: false,
         timeoutMs: TIMEOUT_ANALYSIS,
       })
     , 10000);
@@ -263,10 +263,10 @@ class ApiClient {
     });
   }
 
-  async publishToBluesky(content: string, postType: string = "single") {
+  async publishToBluesky(content: string, postType: string = "single", imagePath?: string) {
     return this.request<PublishResponse>("/content/publish-bluesky/", {
       method: "POST",
-      body: { content, type: postType },
+      body: { content, type: postType, image_path: imagePath },
       timeoutMs: TIMEOUT_LLM,
     });
   }
@@ -351,11 +351,21 @@ class ApiClient {
     });
   }
 
-  // Deriv trade sync
+  // Deriv trade sync (legacy endpoint via ViewSet action)
   async syncDerivTrades(userId?: string, daysBack?: number) {
     return this.request<DerivSyncResponse>("/behavior/trades/sync_deriv/", {
       method: "POST",
       body: { user_id: userId, days_back: daysBack },
+      timeoutMs: TIMEOUT_LLM,
+    });
+  }
+
+  // Dedicated sync-trades endpoint (Phase 3)
+  async syncRealTrades(userId?: string, daysBack?: number) {
+    return this.request<DerivSyncResponse>("/behavior/sync-trades/", {
+      method: "POST",
+      body: { user_id: userId, days_back: daysBack },
+      requiresAuth: true,
       timeoutMs: TIMEOUT_LLM,
     });
   }
@@ -414,6 +424,172 @@ class ApiClient {
       method: "POST",
       timeoutMs: TIMEOUT_LLM,
       body: { message, agent_type: agentType, history, user_id: userId },
+    });
+  }
+
+  // ─── Copy Trading endpoints ───────────────────────────────────────
+  async getCopyTraders(limit: number = 10) {
+    return this.request<CopyTradingListResponse>("/agents/copytrading/", {
+      method: "POST",
+      body: { action: "list", limit },
+    });
+  }
+
+  async getTraderStats(traderId: string) {
+    return this.request<TraderStatsResponse>("/agents/copytrading/", {
+      method: "POST",
+      body: { action: "stats", trader_id: traderId },
+    });
+  }
+
+  async getTraderRecommendation(userId: string) {
+    return this.request<TraderRecommendationResponse>("/agents/copytrading/", {
+      method: "POST",
+      body: { action: "recommend", user_id: userId },
+      timeoutMs: TIMEOUT_LLM,
+    });
+  }
+
+  async startCopyTrading(traderId: string) {
+    return this.request<CopyTradeActionResponse>("/agents/copytrading/", {
+      method: "POST",
+      body: { action: "start", trader_id: traderId },
+      requiresAuth: true,
+    });
+  }
+
+  async stopCopyTrading(traderId: string) {
+    return this.request<CopyTradeActionResponse>("/agents/copytrading/", {
+      method: "POST",
+      body: { action: "stop", trader_id: traderId },
+      requiresAuth: true,
+    });
+  }
+
+  // ─── Trading endpoints ────────────────────────────────────────────
+  async getContractQuote(instrument: string, contractType: string = "CALL", amount: number = 10, duration: number = 5, durationUnit: string = "t") {
+    return this.request<ContractQuoteResponse>("/agents/trading/", {
+      method: "POST",
+      body: { action: "quote", instrument, contract_type: contractType, amount, duration, duration_unit: durationUnit },
+    });
+  }
+
+  async executeDemoTrade(instrument: string, contractType: string, amount: number, duration: number, durationUnit: string) {
+    return this.request<DemoTradeResponse>("/agents/trading/", {
+      method: "POST",
+      body: { action: "buy", instrument, contract_type: contractType, amount, duration, duration_unit: durationUnit },
+    });
+  }
+
+  async closeDemoPosition(contractId: number) {
+    return this.request<ClosePositionResponse>("/agents/trading/", {
+      method: "POST",
+      body: { action: "sell", contract_id: contractId },
+    });
+  }
+
+  async getOpenPositions() {
+    return this.request<OpenPositionsResponse>("/agents/trading/", {
+      method: "POST",
+      body: { action: "positions" },
+    });
+  }
+
+  // ─── Trading Twin endpoint ──────────────────────────────────────────
+
+  async getTradingTwin(userId?: string, days = 30, startingEquity = 10000) {
+    return this.request<TradingTwinResult>("/behavior/trading-twin/", {
+      method: "POST",
+      body: { user_id: userId, days, starting_equity: startingEquity },
+      timeoutMs: TIMEOUT_LLM,
+    });
+  }
+
+  // ─── Multi-Persona Content endpoint ────────────────────────────────
+
+  async getMultiPersonaContent(event: Record<string, unknown>) {
+    return this.request<MultiPersonaContentResult>("/content/multi-persona/", {
+      method: "POST",
+      body: { event },
+      timeoutMs: TIMEOUT_LLM,
+    });
+  }
+
+  // ─── Demo trigger + health endpoints ───────────────────────────────
+
+  async triggerDemoEvent(instrument = "BTC/USD", changePct = -3.2) {
+    return this.request<{ status: string; instrument: string; change_pct: number; message: string }>(
+      "/demo/trigger-event/",
+      {
+        method: "POST",
+        body: { instrument, change_pct: changePct },
+      }
+    );
+  }
+
+  async getDemoHealth() {
+    return this.request<{ ready: boolean; checks: Record<string, unknown>; warnings: string[] }>(
+      "/demo/health/"
+    );
+  }
+
+  async runDemoScriptV2(name = "championship_run") {
+    return this.request<DemoRunResult>("/demo/run-script-v2/", {
+      method: "POST",
+      body: { script_name: name },
+      timeoutMs: TIMEOUT_PIPELINE,
+    });
+  }
+
+  // ─── Deriv OAuth / Account endpoints ─────────────────────────────────
+  async saveDerivOAuthTokens(accounts: Array<{ login_id: string; token: string; currency: string }>) {
+    return this.request<{ accounts: DerivAccount[] }>("/deriv-auth/callback/", {
+      method: "POST",
+      body: { accounts },
+      requiresAuth: true,
+    });
+  }
+
+  async getDerivAccounts() {
+    return this.request<{ accounts: DerivAccount[] }>("/deriv-auth/accounts/", {
+      requiresAuth: true,
+    });
+  }
+
+  async deleteDerivAccount(id: string) {
+    return this.request<{ detail: string }>(`/deriv-auth/accounts/${id}/`, {
+      method: "DELETE",
+      requiresAuth: true,
+    });
+  }
+
+  async setDefaultDerivAccount(id: string) {
+    return this.request<DerivAccount>(`/deriv-auth/accounts/${id}/set-default/`, {
+      method: "POST",
+      requiresAuth: true,
+    });
+  }
+
+  async getDerivConnectionStatus() {
+    return this.request<DerivConnectionStatus>("/deriv-auth/status/", {
+      requiresAuth: true,
+    });
+  }
+
+  // ─── Demo script endpoints ────────────────────────────────────────
+  async getDemoScripts() {
+    return this.request<DemoScriptsResponse>("/demo/scripts/");
+  }
+
+  async getDemoScript(name: string) {
+    return this.request<DemoScript>(`/demo/scripts/${name}/`);
+  }
+
+  async runDemoScript(name: string, instrument?: string, userId?: string) {
+    return this.request<DemoRunResult>("/demo/run-script/", {
+      method: "POST",
+      body: { script_name: name, instrument, user_id: userId },
+      timeoutMs: TIMEOUT_PIPELINE,
     });
   }
 }
@@ -522,6 +698,7 @@ export interface MarketTechnicals {
     sma50?: number | null;
     rsi14?: number;
   };
+  insights?: string[];
   summary?: string;
   source?: string;
   error?: string;
@@ -654,6 +831,8 @@ export interface GenerateContentRequest {
   insight: string;
   platform: "bluesky_post" | "bluesky_thread";
   persona_id?: string;
+  include_image?: boolean;
+  analysis_report?: Record<string, unknown>;
 }
 
 export interface GenerateContentResponse {
@@ -662,6 +841,15 @@ export interface GenerateContentResponse {
   persona: string;
   disclaimer: string;
   status?: string;
+  image?: {
+    success: boolean;
+    image_url?: string;
+    image_path?: string;
+    image_type?: string;
+    classification_reasoning?: string;
+    classification_confidence?: number;
+    error?: string;
+  };
 }
 
 export interface PublishResponse {
@@ -669,6 +857,8 @@ export interface PublishResponse {
   status?: string;
   platform?: string;
   uri?: string;
+  url?: string;
+  cid?: string;
   results?: Array<{ uri?: string; url?: string; index?: number }>;
   error?: string;
 }
@@ -678,6 +868,8 @@ export interface ChatMessage {
   content: string;
   timestamp?: string;
   type?: "normal" | "nudge" | "disclaimer";
+  /** When true, skip typewriter animation (message was already streamed) */
+  skipAnimation?: boolean;
 }
 
 export interface ChatResponse {
@@ -732,9 +924,10 @@ export interface VolatilityEventData {
   current_price: number | null;
   price_change_pct: number;
   direction: "spike" | "drop";
-  magnitude: "high" | "medium";
+  magnitude: "high" | "medium" | "low";
   detected_at: string;
   raw_data: Record<string, unknown>;
+  demo_mode?: boolean;
 }
 
 export interface VolatilityEventInput {
@@ -742,7 +935,7 @@ export interface VolatilityEventInput {
   current_price?: number;
   price_change_pct: number;
   direction: "spike" | "drop";
-  magnitude: "high" | "medium";
+  magnitude: "high" | "medium" | "low";
 }
 
 export interface AnalysisReportResponse {
@@ -774,6 +967,9 @@ export interface MarketCommentaryResponse {
   bluesky_uri: string;
   bluesky_url: string;
   generated_at: string;
+  image_url?: string;
+  image_path?: string;
+  image_type?: string;
 }
 
 export interface BehavioralSentinelResponse {
@@ -805,7 +1001,10 @@ export interface DerivSyncResponse {
   trades_synced: number;
   trades_updated: number;
   total_trades: number;
-  analysis_summary: Record<string, unknown> | null;
+  real_trades?: number;
+  demo_trades?: number;
+  is_demo?: boolean;
+  analysis_summary?: Record<string, unknown> | null;
 }
 
 export interface PipelineResponse {
@@ -948,6 +1147,222 @@ export interface WowMomentResponse {
     total_found: number;
   } | string;
   disclaimer: string;
+}
+
+// ─── Trading Twin types ─────────────────────────────────────────────
+
+export interface TwinPoint {
+  timestamp: string;
+  impulsive_equity: number;
+  disciplined_equity: number;
+  trade_id?: string;
+  is_impulsive: boolean;
+  pattern?: string;
+}
+
+export interface TradingTwinResult {
+  equity_curve: TwinPoint[];
+  impulsive_final_equity: number;
+  disciplined_final_equity: number;
+  equity_difference: number;
+  equity_difference_pct: number;
+  total_trades: number;
+  impulsive_trades: number;
+  disciplined_trades: number;
+  impulsive_loss: number;
+  disciplined_gain: number;
+  pattern_breakdown: Record<string, number>;
+  narrative: string;
+  key_insight: string;
+  analysis_period_days: number;
+  is_real_data?: boolean;
+  data_source?: "real" | "demo";
+  generated_at: string;
+}
+
+// ─── Multi-Persona Content types ────────────────────────────────────
+
+export interface MultiPersonaContentResult {
+  event_summary: string;
+  calm_analyst_post: string;
+  data_nerd_post: string;
+  trading_coach_post: string;
+  generated_at: string;
+}
+
+// ─── Copy Trading types ─────────────────────────────────────────────
+
+export interface CopyTrader {
+  loginid: string;
+  token: string;
+  avg_profit: number;
+  total_trades: number;
+  copiers: number;
+  performance_probability: number;
+  min_trade_stake?: number | null;
+  trade_types?: string[];
+  balance?: number | null;
+  currency?: string;
+  win_rate?: number;
+  avg_loss?: number;
+  active_since?: string | null;
+  _demo?: boolean;
+}
+
+export interface TraderStatsResponse {
+  trader_id: string;
+  stats: {
+    avg_profit: number;
+    total_trades: number;
+    copiers: number;
+    performance_probability: number;
+    monthly_profitable_trades: number;
+    active_since: string;
+  };
+  is_demo?: boolean;
+  error?: string;
+}
+
+export interface TraderRecommendationResponse {
+  recommendations: Array<{
+    trader: CopyTrader;
+    compatibility_score: number;
+    reasons: string[];
+  }>;
+  disclaimer: string;
+  is_demo?: boolean;
+  error?: string;
+}
+
+export interface CopyTradingListResponse {
+  traders: CopyTrader[];
+  count: number;
+  total_count: number;
+  source?: string;
+  disclaimer?: string;
+  is_demo?: boolean;
+  error?: string;
+}
+
+export interface CopyTradeActionResponse {
+  success: boolean;
+  message: string;
+  disclaimer?: string;
+  error?: string;
+}
+
+// ─── Trading types ──────────────────────────────────────────────────
+
+export interface ContractQuoteResponse {
+  proposal_id: string;
+  instrument: string;
+  contract_type: string;
+  ask_price: number;
+  payout: number;
+  spot: number;
+  longcode: string;
+  duration: number;
+  duration_unit: string;
+  disclaimer: string;
+  error?: string;
+}
+
+export interface DemoTradeResponse {
+  contract_id: number;
+  buy_price: number;
+  balance_after: number;
+  longcode: string;
+  start_time: string;
+  disclaimer: string;
+  error?: string;
+}
+
+export interface ClosePositionResponse {
+  contract_id: number;
+  sold_for: number;
+  profit: number;
+  error?: string;
+}
+
+export interface OpenPosition {
+  contract_id: number;
+  instrument: string;
+  contract_type: string;
+  buy_price: number;
+  current_spot: number;
+  profit: number;
+  is_valid_to_sell: boolean;
+  longcode: string;
+}
+
+export interface OpenPositionsResponse {
+  positions: OpenPosition[];
+  count: number;
+  error?: string;
+}
+
+// ─── Demo script types ──────────────────────────────────────────────
+
+export interface DemoStep {
+  step_number: number;
+  title: string;
+  narration: string;
+  api_endpoint: string;
+  api_params: Record<string, unknown>;
+  expected_duration_sec: number;
+  wow_factor: string;
+}
+
+export interface DemoScript {
+  name: string;
+  total_duration_sec: number;
+  opening_line: string;
+  closing_line: string;
+  steps: DemoStep[];
+}
+
+export interface DemoScriptsResponse {
+  scripts: Array<{ name: string; description: string; total_duration_sec: number; step_count: number }>;
+}
+
+export interface DemoStepResult {
+  step_number: number;
+  title: string;
+  status: "success" | "error";
+  result: Record<string, unknown>;
+  duration_ms: number;
+  narration?: string;
+  wow_factor?: string;
+  act?: string;
+  visual_cue?: string;
+  fallback_used?: string;
+}
+
+export interface DemoRunResult {
+  script_name: string;
+  status: "success" | "partial" | "error";
+  steps: DemoStepResult[];
+  total_duration_ms: number;
+  opening_narration?: string;
+  closing_narration?: string;
+}
+
+// ─── Deriv Auth types ────────────────────────────────────────────────
+
+export interface DerivAccount {
+  id: string;
+  deriv_login_id: string;
+  account_type: "real" | "demo";
+  currency: string;
+  is_active: boolean;
+  is_default: boolean;
+  created_at: string;
+}
+
+export interface DerivConnectionStatus {
+  connected: boolean;
+  account_count: number;
+  default_account: DerivAccount | null;
 }
 
 // Singleton instance

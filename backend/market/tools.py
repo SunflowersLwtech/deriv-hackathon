@@ -18,6 +18,28 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
+
+def _is_forex_market_closed() -> bool:
+    """Check if forex markets are currently closed (weekend).
+    Forex closes Friday ~22:00 UTC, reopens Sunday ~22:00 UTC."""
+    now = datetime.now(tz=timezone.utc)
+    weekday = now.weekday()  # 0=Monday, 6=Sunday
+    hour = now.hour
+    if weekday == 5:  # Saturday — always closed
+        return True
+    if weekday == 6 and hour < 22:  # Sunday before 22:00 UTC
+        return True
+    if weekday == 4 and hour >= 22:  # Friday after 22:00 UTC
+        return True
+    return False
+
+
+def _is_forex_instrument(instrument: str) -> bool:
+    """Check if an instrument is a forex/commodity that closes on weekends."""
+    deriv_symbol = _get_deriv_symbol(instrument)
+    return deriv_symbol.startswith("frx")
+
+
 # Gracefully handle missing Redis — cache is optional
 try:
     from .cache import get_cached_price, set_cached_price
@@ -29,16 +51,45 @@ except ImportError:
 
 # Deriv symbol mapping: user-friendly -> Deriv API symbol
 DERIV_SYMBOLS = {
+    # Major forex pairs
     "EUR/USD": "frxEURUSD",
     "GBP/USD": "frxGBPUSD",
     "USD/JPY": "frxUSDJPY",
     "AUD/USD": "frxAUDUSD",
     "USD/CHF": "frxUSDCHF",
+    "USD/CAD": "frxUSDCAD",
+    "NZD/USD": "frxNZDUSD",
+    # Cross pairs
+    "EUR/GBP": "frxEURGBP",
+    "EUR/JPY": "frxEURJPY",
+    "GBP/JPY": "frxGBPJPY",
+    "AUD/JPY": "frxAUDJPY",
+    "EUR/AUD": "frxEURAUD",
+    "EUR/CHF": "frxEURCHF",
+    "EUR/CAD": "frxEURCAD",
+    "GBP/AUD": "frxGBPAUD",
+    "GBP/CHF": "frxGBPCHF",
+    "GBP/CAD": "frxGBPCAD",
+    # Exotic pairs
+    "USD/CNH": "frxUSDCNH",
+    "USD/CNY": "frxUSDCNH",  # CNH = offshore yuan on Deriv
+    "USD/SGD": "frxUSDSGD",
+    "USD/HKD": "frxUSDHKD",
+    "USD/MXN": "frxUSDMXN",
+    "USD/ZAR": "frxUSDZAR",
+    "USD/TRY": "frxUSDTRY",
+    "USD/SEK": "frxUSDSEK",
+    "USD/NOK": "frxUSDNOK",
+    "USD/DKK": "frxUSDDKK",
+    # Crypto
     "BTC/USD": "cryBTCUSD",
     "ETH/USD": "cryETHUSD",
+    # Metals
     "GOLD": "frxXAUUSD",
     "XAU/USD": "frxXAUUSD",
     "SILVER": "frxXAGUSD",
+    "XAG/USD": "frxXAGUSD",
+    # Synthetic indices
     "Volatility 75": "R_75",
     "Volatility 75 Index": "R_75",
     "V75": "R_75",
@@ -46,14 +97,24 @@ DERIV_SYMBOLS = {
     "V100": "R_100",
     "Volatility 10": "R_10",
     "V10": "R_10",
+    "Volatility 25": "R_25",
+    "V25": "R_25",
+    "Volatility 50": "R_50",
+    "V50": "R_50",
 }
 
 TIMEFRAME_TO_GRANULARITY = {
     "1m": 60,
+    "2m": 120,
+    "3m": 180,
     "5m": 300,
+    "10m": 600,
     "15m": 900,
+    "30m": 1800,
     "1h": 3600,
+    "2h": 7200,
     "4h": 14400,
+    "8h": 28800,
     "1d": 86400,
 }
 
@@ -152,20 +213,92 @@ def _run_async_in_new_thread(coro):
     return result[0]
 
 
+def _parse_currency_pair(instrument: str) -> Optional[tuple]:
+    """Try to parse an instrument string into (base, quote) currency codes.
+    Returns None if it doesn't look like a forex pair."""
+    # Handles: "CNY/MYR", "cny/myr", "CNYMYR", "USD CNY"
+    inst = instrument.strip().upper()
+    # Explicit separator
+    for sep in ("/", "-", "_", " "):
+        if sep in inst:
+            parts = inst.split(sep, 1)
+            if len(parts) == 2 and len(parts[0]) == 3 and len(parts[1]) == 3:
+                return parts[0], parts[1]
+    # No separator, 6-char string
+    if len(inst) == 6 and inst.isalpha():
+        return inst[:3], inst[3:]
+    return None
+
+
+def _fetch_open_exchange_rate(base: str, quote: str) -> Dict[str, Any]:
+    """Fetch exchange rate from the free Open Exchange Rates API (no key needed).
+    Uses https://open.er-api.com which provides ~170 currencies."""
+    try:
+        resp = requests.get(
+            f"https://open.er-api.com/v6/latest/{base}",
+            timeout=6,
+        )
+        if resp.status_code != 200:
+            return {"price": None, "error": f"Exchange rate API HTTP {resp.status_code}"}
+        data = resp.json()
+        if data.get("result") != "success":
+            return {"price": None, "error": "Exchange rate API returned failure"}
+        rates = data.get("rates", {})
+        rate = rates.get(quote)
+        if rate is None:
+            return {"price": None, "error": f"Currency {quote} not found in exchange rate data"}
+        return {
+            "instrument": f"{base}/{quote}",
+            "price": round(float(rate), 6),
+            "timestamp": data.get("time_last_update_utc", datetime.now(tz=timezone.utc).isoformat()),
+            "source": "open.er-api.com (ECB/market rates)",
+            "note": "Indicative mid-market rate, not a live trading quote.",
+        }
+    except Exception as e:
+        return {"price": None, "error": f"Exchange rate lookup failed: {e}"}
+
+
 def fetch_price_data(instrument: str) -> Dict[str, Any]:
     """
-    Fetch current price data for an instrument from Deriv WebSocket API.
-    Uses Redis cache to avoid redundant WebSocket calls (5-second TTL).
+    Fetch current price data for an instrument.
+
+    Priority:
+    1. Deriv WebSocket API (live trading quotes)
+    2. Free exchange rate API fallback (indicative mid-market rates for any
+       currency pair Deriv doesn't offer, e.g. CNY/MYR, THB/PHP, etc.)
 
     Args:
-        instrument: Trading instrument symbol (e.g., "EUR/USD")
+        instrument: Trading instrument symbol (e.g., "EUR/USD", "CNY/MYR")
 
     Returns:
         Dict with price, change, etc.
     """
-    # Check cache first (short 5s TTL for live prices — deduplicates the burst
-    # of concurrent requests that fire when dashboard hooks mount at once.
-    # This differs from cache.py's 300s default which is for longer-lived data.
+    # Weekend guard: forex/commodity markets are closed Fri 22:00 – Sun 22:00 UTC
+    if _is_forex_instrument(instrument) and _is_forex_market_closed():
+        # Even if Deriv is closed, try the free API for indicative rates
+        pair = _parse_currency_pair(instrument)
+        if pair:
+            fallback = _fetch_open_exchange_rate(pair[0], pair[1])
+            if fallback.get("price") is not None:
+                fallback["market_closed"] = True
+                fallback["note"] = (
+                    "Forex market is closed on weekends. "
+                    "This is an indicative mid-market rate from the last session."
+                )
+                return fallback
+        return {
+            "instrument": instrument,
+            "price": None,
+            "error": (
+                f"{instrument} — Forex market is closed on weekends. "
+                "Displaying last session data. Live trading resumes Sunday 22:00 UTC."
+            ),
+            "market_closed": True,
+            "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+            "source": "deriv",
+        }
+
+    # Check cache first (short 5s TTL for live prices)
     if _CACHE_AVAILABLE:
         try:
             cached = get_cached_price(instrument)
@@ -187,8 +320,23 @@ def fetch_price_data(instrument: str) -> Dict[str, Any]:
                 set_cached_price(instrument, result["price"], ttl_seconds=5)
             except Exception as exc:
                 logger.debug("Redis cache write failed for %s: %s", instrument, exc)
+
+        # If Deriv returned an error, try free exchange rate API as fallback
+        if result.get("price") is None and result.get("error"):
+            pair = _parse_currency_pair(instrument)
+            if pair:
+                fallback = _fetch_open_exchange_rate(pair[0], pair[1])
+                if fallback.get("price") is not None:
+                    return fallback
+
         return result
     except Exception as e:
+        # Last resort: try free exchange rate API
+        pair = _parse_currency_pair(instrument)
+        if pair:
+            fallback = _fetch_open_exchange_rate(pair[0], pair[1])
+            if fallback.get("price") is not None:
+                return fallback
         return {
             "instrument": instrument,
             "price": None,
@@ -221,7 +369,7 @@ async def _fetch_deriv_history_async(
     request_payload = {
         "ticks_history": deriv_symbol,
         "adjust_start_time": 1,
-        "count": max(10, min(count, 500)),
+        "count": max(10, min(count, 5000)),
         "end": "latest",
         "style": "candles",
         "granularity": granularity,
@@ -277,6 +425,22 @@ def fetch_price_history(
     count: int = 120,
 ) -> Dict[str, Any]:
     """Fetch historical candles for charting and technical analysis."""
+    # Weekend guard for forex/commodity instruments
+    if _is_forex_instrument(instrument) and _is_forex_market_closed():
+        return {
+            "instrument": instrument,
+            "timeframe": timeframe,
+            "candles": [],
+            "change": 0.0,
+            "change_percent": 0.0,
+            "error": (
+                f"{instrument} — Forex market is closed on weekends. "
+                "Live data resumes Sunday 22:00 UTC."
+            ),
+            "market_closed": True,
+            "source": "deriv",
+        }
+
     granularity = TIMEFRAME_TO_GRANULARITY.get(timeframe, 3600)
     try:
         result = _run_async_in_new_thread(
@@ -313,6 +477,139 @@ def fetch_price_history(
         "change_percent": round(change_percent, 4),
         "source": "deriv",
         "error": result.get("error"),
+    }
+
+
+# ─── Multi-timeframe analysis helpers ────────────────────────────────
+
+
+def _compute_atr(candles: List[Dict[str, Any]], period: int = 14) -> float:
+    """Compute Average True Range from OHLC candles."""
+    if len(candles) < period + 1:
+        # Not enough data for full ATR, use what we have
+        if len(candles) < 2:
+            return 0.0
+        true_ranges = []
+        for i in range(1, len(candles)):
+            high = candles[i]["high"]
+            low = candles[i]["low"]
+            prev_close = candles[i - 1]["close"]
+            tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
+            true_ranges.append(tr)
+        return sum(true_ranges) / len(true_ranges) if true_ranges else 0.0
+
+    true_ranges = []
+    for i in range(1, len(candles)):
+        high = candles[i]["high"]
+        low = candles[i]["low"]
+        prev_close = candles[i - 1]["close"]
+        tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
+        true_ranges.append(tr)
+
+    return sum(true_ranges[-period:]) / period
+
+
+def _compute_rsi(closes: List[float], period: int = 14) -> float:
+    """Compute RSI from close prices."""
+    if len(closes) < period + 1:
+        return 50.0
+
+    gains = []
+    losses = []
+    for i in range(1, len(closes)):
+        delta = closes[i] - closes[i - 1]
+        gains.append(max(delta, 0))
+        losses.append(abs(min(delta, 0)))
+
+    avg_gain = sum(gains[-period:]) / period
+    avg_loss = sum(losses[-period:]) / period
+
+    if avg_loss == 0:
+        return 100.0 if avg_gain > 0 else 50.0
+
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
+
+
+def fetch_multi_timeframe_changes(instrument: str) -> Dict[str, Any]:
+    """
+    Fetch multi-timeframe price changes, ATR(14), RSI(14), and trend for an instrument.
+
+    Returns dict with: current_price, change_1h, change_24h, change_7d,
+    atr_14, atr_ratio, rsi_14, trend, source.
+    """
+    # Parallel fetch: current price + 1h candles (168 = 7 days)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        price_future = executor.submit(fetch_price_data, instrument)
+        history_future = executor.submit(fetch_price_history, instrument, "1h", 168)
+        price_data = price_future.result()
+        history = history_future.result()
+
+    price = price_data.get("price")
+    candles = history.get("candles", []) or []
+
+    if price is None or len(candles) < 2:
+        return {
+            "current_price": price,
+            "change_1h": 0.0,
+            "change_24h": 0.0,
+            "change_7d": 0.0,
+            "atr_14": 0.0,
+            "atr_ratio": 0.0,
+            "rsi_14": 50.0,
+            "trend": "neutral",
+            "source": "multi_timeframe",
+            "error": price_data.get("error") or "Insufficient candle data",
+        }
+
+    closes = [c["close"] for c in candles]
+
+    # 1h change: current price vs 1 candle ago
+    price_1h_ago = candles[-2]["close"] if len(candles) >= 2 else price
+    change_1h = ((price - price_1h_ago) / price_1h_ago * 100) if price_1h_ago else 0.0
+
+    # 24h change: current price vs 24 candles ago
+    if len(candles) >= 24:
+        price_24h_ago = candles[-24]["close"]
+    else:
+        price_24h_ago = candles[0]["close"]
+    change_24h = ((price - price_24h_ago) / price_24h_ago * 100) if price_24h_ago else 0.0
+
+    # 7d change: current price vs oldest candle
+    price_7d_ago = candles[0]["close"]
+    change_7d = ((price - price_7d_ago) / price_7d_ago * 100) if price_7d_ago else 0.0
+
+    # ATR(14) on 1h candles
+    atr_14 = _compute_atr(candles, period=14)
+
+    # RSI(14) on 1h candle closes
+    rsi_14 = _compute_rsi(closes, period=14)
+
+    # Trend from SMA20/SMA50
+    sma20 = sum(closes[-20:]) / 20 if len(closes) >= 20 else price
+    sma50 = sum(closes[-50:]) / 50 if len(closes) >= 50 else sma20
+
+    if price > sma20 > sma50:
+        trend = "bullish"
+    elif price < sma20 < sma50:
+        trend = "bearish"
+    else:
+        trend = "neutral"
+
+    # ATR ratio: |24h price change in units| / ATR
+    price_change_abs = abs(price - price_24h_ago)
+    atr_ratio = round(price_change_abs / atr_14, 2) if atr_14 > 0 else 0.0
+
+    return {
+        "current_price": price,
+        "change_1h": round(change_1h, 2),
+        "change_24h": round(change_24h, 2),
+        "change_7d": round(change_7d, 2),
+        "atr_14": round(atr_14, 6),
+        "atr_ratio": atr_ratio,
+        "rsi_14": round(rsi_14, 1),
+        "trend": trend,
+        "source": "multi_timeframe",
     }
 
 
@@ -353,67 +650,132 @@ def _search_newsapi(query: str, limit: int) -> List[Dict[str, Any]]:
 
 
 def _fetch_finnhub_headlines(limit: int = 10) -> List[Dict[str, Any]]:
-    """Fallback: fetch general market news from Finnhub (free tier)."""
+    """
+    Fallback: fetch trading-focused market news from Finnhub (forex, crypto, general).
+    Aggregates multiple categories to ensure trading relevance.
+    """
     api_key = os.environ.get("FINNHUB_API_KEY", "")
     if not api_key:
         return []
-    try:
-        response = requests.get(
-            "https://finnhub.io/api/v1/news",
-            params={"category": "general", "token": api_key},
-            timeout=5,
-        )
-        if response.status_code != 200:
-            return []
-        items = response.json()
-        if not isinstance(items, list):
-            return []
-        return [
-            {
-                "title": (item.get("headline") or "").strip(),
-                "description": (item.get("summary") or "").strip(),
-                "url": item.get("url", ""),
-                "publishedAt": (
-                    datetime.fromtimestamp(item["datetime"], tz=timezone.utc).isoformat()
-                    if isinstance(item.get("datetime"), (int, float)) and item["datetime"] > 0
-                    else ""
-                ),
-                "source": item.get("source", ""),
-            }
-            for item in items[:limit]
-            if (item.get("headline") or "").strip()
-        ]
-    except Exception:
-        return []
 
+    categories = ["forex", "crypto", "general"]
+    all_articles: List[Dict[str, Any]] = []
 
-def fetch_top_headlines(category: str = "business", country: str = "us", limit: int = 10) -> List[Dict[str, Any]]:
-    """Fetch top headlines from NewsAPI, falling back to Finnhub news."""
-    api_key = os.environ.get("NEWS_API_KEY", "")
-    if api_key:
+    for category in categories:
         try:
             response = requests.get(
-                "https://newsapi.org/v2/top-headlines",
-                params={"category": category, "country": country, "apiKey": api_key, "pageSize": limit},
+                "https://finnhub.io/api/v1/news",
+                params={"category": category, "token": api_key},
                 timeout=5,
             )
-            if response.status_code == 200:
-                articles = [
-                    {
-                        "title": a.get("title", ""),
-                        "description": a.get("description", ""),
-                        "url": a.get("url", ""),
-                        "publishedAt": a.get("publishedAt", ""),
-                        "source": a.get("source", {}).get("name", ""),
-                    }
-                    for a in response.json().get("articles", [])[:limit]
-                ]
-                if articles:
-                    return articles
+            if response.status_code != 200:
+                continue
+            items = response.json()
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                headline = (item.get("headline") or "").strip()
+                if not headline:
+                    continue
+                all_articles.append({
+                    "title": headline,
+                    "description": (item.get("summary") or "").strip(),
+                    "url": item.get("url", ""),
+                    "publishedAt": (
+                        datetime.fromtimestamp(item["datetime"], tz=timezone.utc).isoformat()
+                        if isinstance(item.get("datetime"), (int, float)) and item["datetime"] > 0
+                        else ""
+                    ),
+                    "source": item.get("source", "Finnhub"),
+                    "category": category,
+                })
         except Exception:
-            pass
+            continue
 
-    # Fallback to Finnhub news (free tier, no rate limit issues)
+    # Deduplicate by URL and sort by date
+    seen_urls: set[str] = set()
+    deduped: List[Dict[str, Any]] = []
+    for article in all_articles:
+        url = article.get("url", "")
+        if url and url not in seen_urls:
+            seen_urls.add(url)
+            deduped.append(article)
+    deduped.sort(key=lambda x: x.get("publishedAt", ""), reverse=True)
+    return deduped[:limit]
+
+
+# Terms used by fetch_top_headlines and generate_insights_from_news to filter
+# articles for trading relevance.
+_TRADING_TERMS = {
+    "forex", "trading", "crypto", "bitcoin", "ethereum", "btc", "eth",
+    "stock", "market", "usd", "eur", "gbp", "jpy", "gold", "xau",
+    "currency", "exchange", "trader", "cfd", "options", "futures",
+    "commodities", "oil", "silver", "nasdaq", "dow", "s&p",
+}
+
+
+def fetch_top_headlines(limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    Fetch top trading & finance headlines from NewsAPI, falling back to Finnhub.
+    Focuses on forex, crypto, stocks, commodities, and market news relevant to
+    Deriv traders.
+    """
+    api_key = os.environ.get("NEWS_API_KEY", "")
+
+    if api_key:
+        trading_keywords = (
+            'forex OR cryptocurrency OR "stock market" OR "bitcoin" '
+            'OR "EUR/USD" OR "gold prices" OR "oil prices" OR "crypto market"'
+        )
+        trusted_sources = (
+            "bloomberg,reuters,financial-times,"
+            "the-wall-street-journal,cnbc,fortune,business-insider"
+        )
+
+        for sources_param in (trusted_sources, None):
+            try:
+                params: Dict[str, Any] = {
+                    "q": trading_keywords,
+                    "apiKey": api_key,
+                    "sortBy": "publishedAt",
+                    "language": "en",
+                    "pageSize": limit * 3,
+                }
+                if sources_param:
+                    params["sources"] = sources_param
+
+                response = requests.get(
+                    "https://newsapi.org/v2/everything",
+                    params=params,
+                    timeout=5,
+                )
+                if response.status_code != 200:
+                    continue
+
+                articles = response.json().get("articles", [])
+                region_blocklist = {"india", "indian rupee", "mumbai", "delhi", "sensex", "nifty"}
+
+                filtered: List[Dict[str, Any]] = []
+                for a in articles:
+                    combined = f"{(a.get('title') or '').lower()} {(a.get('description') or '').lower()}"
+                    if any(t in combined for t in region_blocklist):
+                        continue
+                    if any(t in combined for t in _TRADING_TERMS):
+                        filtered.append({
+                            "title": a.get("title", ""),
+                            "description": a.get("description", ""),
+                            "url": a.get("url", ""),
+                            "publishedAt": a.get("publishedAt", ""),
+                            "source": a.get("source", {}).get("name", ""),
+                        })
+                        if len(filtered) >= limit:
+                            break
+                if filtered:
+                    return filtered
+            except Exception as e:
+                logger.debug(f"NewsAPI trading headlines failed: {e}")
+
+    # Fallback to Finnhub market news
     return _fetch_finnhub_headlines(limit)
 
 
@@ -589,6 +951,99 @@ def analyze_technicals(instrument: str, timeframe: str = "1h") -> Dict[str, Any]
         f"Observed volatility is {volatility}."
     )
 
+    # ── Generate detailed insights ──────────────────────────────────
+    insights: list[str] = []
+
+    # 1. SMA alignment insight
+    if sma50 is not None:
+        if current_price > sma20 > sma50:
+            insights.append(
+                f"SMA alignment is bullish: price ({current_price:.4f}) > SMA20 ({sma20:.4f}) > SMA50 ({sma50:.4f}). "
+                "This stacked alignment suggests sustained upward momentum."
+            )
+        elif current_price < sma20 < sma50:
+            insights.append(
+                f"SMA alignment is bearish: price ({current_price:.4f}) < SMA20 ({sma20:.4f}) < SMA50 ({sma50:.4f}). "
+                "This stacked alignment suggests sustained downward pressure."
+            )
+        elif abs(sma20 - sma50) / sma50 < 0.002:
+            insights.append(
+                f"SMA20 ({sma20:.4f}) and SMA50 ({sma50:.4f}) are converging — possible trend change or breakout ahead."
+            )
+        else:
+            insights.append(
+                f"Mixed SMA signals: SMA20 at {sma20:.4f}, SMA50 at {sma50:.4f}. "
+                "No clear directional alignment; watch for a crossover."
+            )
+    else:
+        insights.append(
+            f"Only SMA20 available ({sma20:.4f}). Insufficient history for SMA50 — short-term trend only."
+        )
+
+    # 2. RSI interpretation
+    if rsi14 > 70:
+        insights.append(
+            f"RSI(14) at {rsi14:.1f} indicates overbought conditions. "
+            "Price may be extended; watch for pullback or reversal signals."
+        )
+    elif rsi14 < 30:
+        insights.append(
+            f"RSI(14) at {rsi14:.1f} indicates oversold conditions. "
+            "Potential bounce or reversal opportunity — confirm with price action."
+        )
+    elif rsi14 > 55:
+        insights.append(
+            f"RSI(14) at {rsi14:.1f} shows moderate bullish momentum. "
+            "Buyers have the edge but not overextended."
+        )
+    elif rsi14 < 45:
+        insights.append(
+            f"RSI(14) at {rsi14:.1f} shows mild bearish pressure. "
+            "Sellers are present but momentum is not extreme."
+        )
+    else:
+        insights.append(
+            f"RSI(14) at {rsi14:.1f} is in neutral territory (45-55). No strong momentum bias."
+        )
+
+    # 3. Support/resistance proximity
+    price_range = resistance - support if resistance != support else 1
+    dist_to_resistance = (resistance - current_price) / price_range * 100
+    dist_to_support = (current_price - support) / price_range * 100
+
+    if dist_to_resistance < 15:
+        insights.append(
+            f"Price is near resistance ({resistance:.4f}), only {dist_to_resistance:.0f}% of the recent range away. "
+            "Watch for rejection or breakout above this level."
+        )
+    elif dist_to_support < 15:
+        insights.append(
+            f"Price is near support ({support:.4f}), only {dist_to_support:.0f}% of the recent range above it. "
+            "Watch for bounce or breakdown below this level."
+        )
+    else:
+        insights.append(
+            f"Price is mid-range between support ({support:.4f}) and resistance ({resistance:.4f}). "
+            f"Room to move in either direction ({dist_to_support:.0f}% from support, {dist_to_resistance:.0f}% from resistance)."
+        )
+
+    # 4. Volatility context
+    if volatility == "high":
+        insights.append(
+            f"Volatility is high (stddev of returns: {vol:.4f}). "
+            "Wider stops and smaller position sizes recommended. Breakout moves are more likely."
+        )
+    elif volatility == "low":
+        insights.append(
+            f"Volatility is low (stddev of returns: {vol:.4f}). "
+            "Tight ranges may precede a breakout. Consider range-bound strategies."
+        )
+    else:
+        insights.append(
+            f"Volatility is moderate (stddev of returns: {vol:.4f}). "
+            "Normal trading conditions — standard risk management applies."
+        )
+
     return {
         "instrument": instrument,
         "timeframe": timeframe,
@@ -604,17 +1059,33 @@ def analyze_technicals(instrument: str, timeframe: str = "1h") -> Dict[str, Any]
             "sma50": round(sma50, 6) if sma50 is not None else None,
             "rsi14": round(rsi14, 2),
         },
+        "insights": insights,
         "summary": summary,
         "source": "deriv",
     }
 
 
-def get_sentiment(instrument: str) -> Dict[str, Any]:
+def get_sentiment(
+    instrument: str,
+    price_change_pct: float = 0.0,
+    rsi_14: Optional[float] = None,
+    trend: Optional[str] = None,
+    atr_ratio: Optional[float] = None,
+) -> Dict[str, Any]:
     """
     Get market sentiment for an instrument.
 
+    Combines news-based LLM analysis with price-action context and
+    optional momentum data (RSI, trend, ATR ratio) when available.
+    Never returns score=0.0 — at minimum derives sentiment from
+    the observed price movement so users always see meaningful data.
+
     Args:
         instrument: Trading instrument
+        price_change_pct: Recent price change % (used as fallback signal)
+        rsi_14: Optional RSI(14) value for momentum context
+        trend: Optional trend direction ("bullish"/"bearish"/"neutral")
+        atr_ratio: Optional ATR ratio (how unusual the move is)
 
     Returns:
         Sentiment analysis results
@@ -622,20 +1093,41 @@ def get_sentiment(instrument: str) -> Dict[str, Any]:
     # Use DeepSeek to analyze sentiment from news
     news = search_news(instrument, limit=10)
 
+    # Also try broader search if instrument-specific search is empty
     if not news:
-        return {
-            "instrument": instrument,
-            "sentiment": "neutral",
-            "score": 0.0,
-            "sources": []
+        # Try base asset name (e.g. "Bitcoin" for BTC/USD, "Gold" for GOLD)
+        _ASSET_NAMES = {
+            "BTC/USD": "Bitcoin", "ETH/USD": "Ethereum",
+            "EUR/USD": "Euro Dollar forex", "GBP/USD": "British Pound forex",
+            "GOLD": "Gold commodity",
         }
+        broad_query = _ASSET_NAMES.get(instrument, instrument.replace("/", " "))
+        news = search_news(broad_query, limit=10)
+
+    if not news:
+        # No news at all — derive sentiment purely from price action
+        return _sentiment_from_price_action(instrument, price_change_pct)
 
     news_summary = "\n".join([
         f"- {article['title']}: {article.get('description', '')[:100]}"
         for article in news[:5]
     ])
 
+    # Build momentum context from multi-timeframe data
+    momentum_lines = []
+    if rsi_14 is not None:
+        rsi_label = "oversold" if rsi_14 < 30 else "overbought" if rsi_14 > 70 else "neutral"
+        momentum_lines.append(f"- RSI(14): {rsi_14} ({rsi_label})")
+    if trend:
+        momentum_lines.append(f"- Trend: {trend}")
+    if atr_ratio is not None:
+        momentum_lines.append(f"- Volatility: move is {atr_ratio}x the average true range")
+    momentum_context = "\n".join(momentum_lines)
+    if momentum_context:
+        momentum_context = f"\n\nPrice Momentum Context:\n{momentum_context}"
+
     prompt = f"""Analyze the sentiment of news articles about {instrument}.
+The instrument recently moved {price_change_pct:+.2f}%.{momentum_context}
 
 News Articles:
 {news_summary}
@@ -643,7 +1135,7 @@ News Articles:
 Return a JSON object with:
 {{
   "sentiment": "bullish" | "bearish" | "neutral",
-  "score": -1.0 to 1.0 (negative=bearish, positive=bullish),
+  "score": -1.0 to 1.0 (negative=bearish, positive=bullish). NEVER use exactly 0.0 — always give a directional lean based on the evidence.,
   "key_points": ["point1", "point2", "point3"],
   "confidence": 0.0 to 1.0
 }}"""
@@ -665,17 +1157,42 @@ Return a JSON object with:
             response_text = response_text.split("```")[1].split("```")[0].strip()
 
         sentiment_data = json.loads(response_text)
+        # Guard: if LLM still returned 0.0, nudge it based on price action
+        score = float(sentiment_data.get("score", 0.0))
+        if score == 0.0 and price_change_pct != 0.0:
+            score = max(-1.0, min(1.0, price_change_pct / 5.0))
+            sentiment_data["score"] = round(score, 2)
+            sentiment_data["sentiment"] = "bullish" if score > 0 else "bearish"
+
         sentiment_data["instrument"] = instrument
         sentiment_data["sources"] = [n["source"] for n in news[:5]]
         return sentiment_data
     except Exception as e:
-        print(f"Sentiment analysis error: {e}")
-        return {
-            "instrument": instrument,
-            "sentiment": "neutral",
-            "score": 0.0,
-            "sources": [n["source"] for n in news[:5]]
-        }
+        logger.warning("Sentiment LLM error for %s: %s", instrument, e)
+        # Fallback: derive from price action + attribute news sources
+        result = _sentiment_from_price_action(instrument, price_change_pct)
+        result["sources"] = [n["source"] for n in news[:5]]
+        return result
+
+
+def _sentiment_from_price_action(instrument: str, change_pct: float) -> Dict[str, Any]:
+    """Derive a basic sentiment from price movement when LLM/news fails."""
+    if change_pct > 0.3:
+        sentiment, score = "bullish", round(min(1.0, change_pct / 5.0), 2)
+    elif change_pct < -0.3:
+        sentiment, score = "bearish", round(max(-1.0, change_pct / 5.0), 2)
+    else:
+        # Even "neutral" gets a slight lean so score is never exactly 0
+        score = round(change_pct / 5.0, 2) if change_pct != 0 else 0.05
+        sentiment = "bullish" if score > 0 else "bearish" if score < 0 else "neutral"
+    return {
+        "instrument": instrument,
+        "sentiment": sentiment,
+        "score": score,
+        "key_points": [f"Price moved {change_pct:+.2f}% — sentiment derived from price action"],
+        "confidence": 0.4,
+        "sources": [],
+    }
 
 
 def explain_market_move(instrument: str, move_description: str) -> Dict[str, Any]:
@@ -784,10 +1301,11 @@ def generate_market_brief(instruments: List[str] = None) -> Dict[str, Any]:
         instruments = list(dict.fromkeys(discovered))
 
     if not instruments:
-        # Fallback to popular instruments when DB has no watchlists/trades
+        # Fallback: prefer 24/7 instruments (crypto + synthetic indices)
+        # so the dashboard always has live data, even on weekends.
         instruments = [
-            "frxEURUSD", "frxGBPUSD", "frxUSDJPY",
-            "cryBTCUSD", "frxXAUUSD", "R_100",
+            "cryBTCUSD", "cryETHUSD", "R_100",
+            "R_75", "R_10", "frxEURUSD",
         ]
 
     # Fetch all instruments in parallel (preserving input order via executor.map)
@@ -1037,3 +1555,157 @@ def fetch_active_symbols() -> List[Dict[str, Any]]:
             {"symbol": k, "display_name": k, "market": "forex", "deriv_symbol": v}
             for k, v in DERIV_SYMBOLS.items()
         ]
+
+
+# ─── News-based insight generation ──────────────────────────────────
+
+
+def cleanup_old_insights(keep_count: int = 20) -> int:
+    """Remove old insights, keeping only the most recent *keep_count*."""
+    try:
+        total = MarketInsight.objects.count()
+        if total <= keep_count:
+            return 0
+        keep_ids = list(
+            MarketInsight.objects.order_by("-generated_at")
+            .values_list("id", flat=True)[:keep_count]
+        )
+        deleted, _ = MarketInsight.objects.exclude(id__in=keep_ids).delete()
+        logger.info(f"Cleaned up {deleted} old insights, kept {keep_count}")
+        return deleted
+    except Exception as e:
+        logger.error(f"Failed to cleanup old insights: {e}")
+        return 0
+
+
+def generate_insights_from_news(limit: int = 8, max_insights: int = 5) -> List[Dict[str, Any]]:
+    """
+    Fetch recent headlines, run them through the LLM to produce trading
+    insights, and persist the results to ``MarketInsight``.
+    """
+    try:
+        cleanup_old_insights(keep_count=15)
+
+        headlines = fetch_top_headlines(limit=limit)
+        if not headlines:
+            logger.info("No headlines found for insight generation")
+            return []
+
+        news_text = "\n\n".join(
+            f"Article {i + 1}:\n"
+            f"Title: {a.get('title', '')}\n"
+            f"Description: {a.get('description', '')}\n"
+            f"Source: {a.get('source', 'Unknown')}\n"
+            f"Published: {a.get('publishedAt', '')}"
+            for i, a in enumerate(headlines[:limit])
+        )
+
+        prompt = (
+            f"Based on these recent financial news articles, generate {max_insights} "
+            "actionable trading insights for traders.\n\n"
+            f"{news_text}\n\n"
+            "For each insight:\n"
+            "1. Focus on market impact and trading implications\n"
+            "2. Be specific about instruments/assets (e.g., BTC/USD, EUR/USD, Gold)\n"
+            "3. Keep insights concise (1-2 sentences max)\n"
+            '4. Classify the insight type as: "news", "technical", or "sentiment"\n'
+            "5. Assign a sentiment score from -1.0 (very bearish) to 1.0 (very bullish)\n\n"
+            "Return ONLY a JSON array with this exact format:\n"
+            "[\n"
+            '  {"instrument": "BTC/USD", "insight_type": "news", '
+            '"content": "…", "sentiment_score": 0.6},\n'
+            "  ...\n"
+            "]\n\n"
+            "RULES:\n"
+            f"- Generate exactly {max_insights} insights\n"
+            "- Each insight must have: instrument, insight_type, content, sentiment_score\n"
+            '- insight_type must be one of: "news", "technical", "sentiment"\n'
+            "- sentiment_score must be between -1.0 and 1.0\n"
+            "- Return ONLY the JSON array, no other text"
+        )
+
+        saved: List[Dict[str, Any]] = []
+
+        try:
+            llm = get_llm_client()
+            response_text = llm.simple_chat(
+                system_prompt=SYSTEM_PROMPT_MARKET,
+                user_message=prompt,
+                temperature=0.4,
+                max_tokens=800,
+            ).strip()
+
+            # Strip markdown fences if present
+            if response_text.startswith("```json"):
+                response_text = response_text.split("```json")[1].split("```")[0].strip()
+            elif response_text.startswith("```"):
+                response_text = response_text.split("```")[1].split("```")[0].strip()
+
+            insights_data = json.loads(response_text)
+
+            top_sources = [
+                {"title": h.get("title", ""), "source": h.get("source", ""), "url": h.get("url", "")}
+                for h in headlines[:3]
+            ]
+
+            for insight in insights_data[:max_insights]:
+                try:
+                    obj = MarketInsight.objects.create(
+                        instrument=insight.get("instrument", "GENERAL"),
+                        insight_type=insight.get("insight_type", "news"),
+                        content=insight.get("content", ""),
+                        sentiment_score=float(insight.get("sentiment_score", 0.0)),
+                        sources={"news_articles": top_sources},
+                    )
+                    saved.append({
+                        "id": str(obj.id),
+                        "instrument": obj.instrument,
+                        "insight_type": obj.insight_type,
+                        "content": obj.content,
+                        "sentiment_score": obj.sentiment_score,
+                        "generated_at": obj.generated_at.isoformat(),
+                    })
+                except Exception as exc:
+                    logger.warning(f"Failed to save insight: {exc}")
+
+        except Exception as exc:
+            logger.error(f"LLM insight generation failed, falling back: {exc}")
+            # Fallback: create basic insights directly from headlines
+            for article in headlines[:max_insights]:
+                try:
+                    text = f"{article.get('title', '')} {article.get('description', '')}".lower()
+                    instrument = "GENERAL"
+                    for kw, sym in [
+                        ("btc", "BTC/USD"), ("bitcoin", "BTC/USD"),
+                        ("eth", "ETH/USD"), ("ethereum", "ETH/USD"),
+                        ("eur", "EUR/USD"), ("euro", "EUR/USD"),
+                        ("gold", "GOLD"), ("xau", "GOLD"),
+                    ]:
+                        if kw in text:
+                            instrument = sym
+                            break
+                    obj = MarketInsight.objects.create(
+                        instrument=instrument,
+                        insight_type="news",
+                        content=f"{article.get('title', 'Market Update')}: "
+                                f"{(article.get('description') or '')[:150]}",
+                        sentiment_score=0.0,
+                        sources={"news_source": article.get("source", ""), "url": article.get("url", "")},
+                    )
+                    saved.append({
+                        "id": str(obj.id),
+                        "instrument": obj.instrument,
+                        "insight_type": obj.insight_type,
+                        "content": obj.content,
+                        "sentiment_score": obj.sentiment_score,
+                        "generated_at": obj.generated_at.isoformat(),
+                    })
+                except Exception as exc:
+                    logger.warning(f"Failed to save fallback insight: {exc}")
+
+        logger.info(f"Generated {len(saved)} insights from {len(headlines)} articles")
+        return saved
+
+    except Exception as e:
+        logger.error(f"Failed to generate insights from news: {e}")
+        return []

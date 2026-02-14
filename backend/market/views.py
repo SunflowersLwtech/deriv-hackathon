@@ -2,6 +2,7 @@ from rest_framework import viewsets
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
+from rest_framework.decorators import action
 from .models import MarketInsight
 from .serializers import MarketInsightSerializer
 from .tools import (
@@ -10,13 +11,42 @@ from .tools import (
     get_sentiment,
     analyze_technicals,
     generate_market_brief,
+    generate_insights_from_news,
 )
 from agents.router import route_market_query
+from django.utils import timezone as dj_tz
+from datetime import timedelta
 
 
 class MarketInsightViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = MarketInsight.objects.all()
     serializer_class = MarketInsightSerializer
+
+    def list(self, request, *args, **kwargs):
+        """Auto-generate fresh insights when none exist or older than 2 hours."""
+        two_hours_ago = dj_tz.now() - timedelta(hours=2)
+        if MarketInsight.objects.filter(generated_at__gte=two_hours_ago).count() == 0:
+            try:
+                generate_insights_from_news(limit=8, max_insights=5)
+            except Exception as e:
+                print(f"Failed to auto-generate insights: {e}")
+        return super().list(request, *args, **kwargs)
+
+    @action(detail=False, methods=["post"], permission_classes=[AllowAny])
+    def refresh(self, request):
+        """POST /api/market/insights/refresh/ — manually trigger insight generation."""
+        limit = int(request.data.get("limit", 8))
+        max_insights = int(request.data.get("max_insights", 5))
+        try:
+            insights = generate_insights_from_news(limit=limit, max_insights=max_insights)
+            return Response({
+                "status": "success",
+                "count": len(insights),
+                "insights": insights,
+                "message": f"Generated {len(insights)} fresh insights from news",
+            })
+        except Exception as e:
+            return Response({"status": "error", "error": str(e)}, status=500)
 
 
 class AskMarketAnalystView(APIView):
@@ -133,14 +163,13 @@ class EconomicCalendarView(APIView):
 
 
 class TopHeadlinesView(APIView):
-    """GET /api/market/headlines/ — NewsAPI top business headlines."""
+    """GET /api/market/headlines/ — Trading & finance focused headlines."""
     permission_classes = [AllowAny]
 
     def get(self, request):
         from .tools import fetch_top_headlines
-        category = request.query_params.get("category", "business")
         limit = int(request.query_params.get("limit", 10))
-        return Response({"headlines": fetch_top_headlines(category=category, limit=limit)})
+        return Response({"headlines": fetch_top_headlines(limit=limit)})
 
 
 class ActiveSymbolsView(APIView):

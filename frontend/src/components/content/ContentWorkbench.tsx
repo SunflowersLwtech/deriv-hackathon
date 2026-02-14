@@ -18,6 +18,7 @@ export default function ContentWorkbench({ className, personas: externalPersonas
   const [platform, setPlatform] = useState<"bluesky_post" | "bluesky_thread">("bluesky_post");
   const [selectedPersona, setSelectedPersona] = useState("");
   const [generatedContent, setGeneratedContent] = useState<string>("");
+  const [generatedImage, setGeneratedImage] = useState<{ url: string; path: string; type: string } | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<{ message: string; uri?: string } | null>(null);
@@ -32,6 +33,7 @@ export default function ContentWorkbench({ className, personas: externalPersonas
     if (!insight.trim()) return;
     setIsGenerating(true);
     setGeneratedContent("");
+    setGeneratedImage(null);
     setPublishResult(null);
 
     try {
@@ -39,8 +41,19 @@ export default function ContentWorkbench({ className, personas: externalPersonas
         insight: insight.trim(),
         platform,
         persona_id: selectedPersona,
+        include_image: true,
       });
       setGeneratedContent(response.content);
+      if (response.image?.success && response.image.image_url) {
+        const imageUrl = response.image.image_url.startsWith("http")
+          ? response.image.image_url
+          : `${window.location.protocol}//${window.location.hostname}:8000${response.image.image_url}`;
+        setGeneratedImage({
+          url: imageUrl,
+          path: response.image.image_path || "",
+          type: response.image.image_type || "ai",
+        });
+      }
     } catch {
       setPublishResult({ message: "Content generation failed. Check API availability and persona configuration." });
     } finally {
@@ -53,7 +66,7 @@ export default function ContentWorkbench({ className, personas: externalPersonas
     setPublishResult(null);
 
     try {
-      const result = await api.publishToBluesky(generatedContent, platform === "bluesky_thread" ? "thread" : "single");
+      const result = await api.publishToBluesky(generatedContent, platform === "bluesky_thread" ? "thread" : "single", generatedImage?.path);
       const primaryUri = result.uri || result.results?.[0]?.url || result.results?.[0]?.uri;
       if (result.success && primaryUri) {
         setPublishResult({
@@ -216,6 +229,18 @@ export default function ContentWorkbench({ className, personas: externalPersonas
             <div className="text-sm text-muted leading-relaxed whitespace-pre-wrap mono-data">
               {generatedContent || (isGenerating && <LoadingDots className="py-2" />)}
             </div>
+            {generatedImage && (
+              <div className="mt-4 border-t border-border pt-4">
+                <img
+                  src={generatedImage.url}
+                  alt="Generated content image"
+                  className="w-full rounded-md border border-border"
+                />
+                <span className="text-[11px] text-muted-foreground mono-data mt-1.5 block">
+                  {generatedImage.type === "chart" ? "Market Chart" : "AI Generated"} image attached
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Actions */}

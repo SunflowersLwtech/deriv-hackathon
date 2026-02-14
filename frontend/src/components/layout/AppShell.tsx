@@ -3,6 +3,10 @@
 import Navbar from "./Navbar";
 import TickerBar from "./TickerBar";
 import Sidebar from "./Sidebar";
+import MarketAlertToast from "@/components/alerts/MarketAlertToast";
+import NarratorBar from "@/components/narrator/NarratorBar";
+import { useMarketAlerts } from "@/hooks/useMarketAlerts";
+import { useNarrator } from "@/hooks/useNarrator";
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -15,8 +19,11 @@ export default function AppShell({
   showSidebar = true,
   showTicker = true,
 }: AppShellProps) {
+  const { latestAlert, clearAlerts } = useMarketAlerts();
+  const { currentNarration, isActive } = useNarrator();
+
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="h-screen bg-background flex flex-col overflow-hidden">
       <Navbar />
       {showTicker && <TickerBar />}
 
@@ -29,6 +36,10 @@ export default function AppShell({
         {/* Right Sidebar */}
         {showSidebar && <Sidebar />}
       </div>
+
+      {/* Global overlays */}
+      <MarketAlertToast alert={latestAlert} onDismiss={clearAlerts} />
+      <NarratorBar narration={currentNarration} isActive={isActive} />
     </div>
   );
 }

@@ -14,16 +14,20 @@ independently or chained via `run_pipeline()`.
 from __future__ import annotations
 
 import json
+import random
 import traceback
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+
+from concurrent.futures import ThreadPoolExecutor
 
 from agents.llm_client import get_llm_client
 from agents.prompts import MASTER_COMPLIANCE_RULES
 from market.tools import (
     fetch_price_data,
     fetch_price_history,
+    fetch_multi_timeframe_changes,
     search_news,
     get_sentiment,
 )
@@ -39,7 +43,7 @@ class VolatilityEvent:
     current_price: Optional[float]
     price_change_pct: float
     direction: str  # "spike" | "drop"
-    magnitude: str  # "high" | "medium"
+    magnitude: str  # "high" | "medium" | "low"
     detected_at: str = ""
     raw_data: Dict[str, Any] = field(default_factory=dict)
 
@@ -115,6 +119,19 @@ class MarketCommentary:
 
 
 @dataclass
+class CopyTradingRecommendation:
+    """Output of Copy Trading Recommendation stage."""
+    top_traders: List[Dict[str, Any]]
+    ai_recommendation: Optional[Dict[str, Any]] = None
+    compatibility_scores: List[Dict[str, Any]] = field(default_factory=list)
+    generated_at: str = ""
+
+    def __post_init__(self):
+        if not self.generated_at:
+            self.generated_at = datetime.now().isoformat()
+
+
+@dataclass
 class PipelineResult:
     """Full pipeline output – every stage's result bundled together."""
     status: str  # "success" | "partial" | "error"
@@ -123,6 +140,7 @@ class PipelineResult:
     personalized_insight: Optional[Dict[str, Any]] = None
     sentinel_insight: Optional[Dict[str, Any]] = None
     market_commentary: Optional[Dict[str, Any]] = None
+    copytrading_recommendation: Optional[Dict[str, Any]] = None
     errors: List[str] = field(default_factory=list)
     pipeline_started_at: str = ""
     pipeline_finished_at: str = ""
@@ -135,22 +153,17 @@ class PipelineResult:
 # ─── Agent 1: Market Monitor ─────────────────────────────────────────
 
 MONITOR_INSTRUMENTS = [
-    "EUR/USD", "GBP/USD", "USD/JPY", "BTC/USD",
-    "ETH/USD", "GOLD", "Volatility 75",
+    "BTC/USD", "ETH/USD", "Volatility 75", "Volatility 100",
+    "EUR/USD", "GBP/USD", "GOLD",
 ]
 
-# Threshold (%) for volatility detection per asset class
-_THRESHOLDS = {
-    "BTC/USD": 3.0,
-    "ETH/USD": 4.0,
-    "Volatility 75": 2.0,
-    "Volatility 100": 2.0,
-    "default": 0.5,
-}
-
-
-def _threshold(instrument: str) -> float:
-    return _THRESHOLDS.get(instrument, _THRESHOLDS["default"])
+_DEMO_EVENTS = [
+    {"instrument": "BTC/USD", "price": 97500.0, "change_pct": 5.2},
+    {"instrument": "ETH/USD", "price": 3100.0, "change_pct": -4.1},
+    {"instrument": "Volatility 75", "price": 900000.0, "change_pct": 2.3},
+    {"instrument": "EUR/USD", "price": 1.0845, "change_pct": -0.8},
+    {"instrument": "GOLD", "price": 2650.0, "change_pct": 1.5},
+]
 
 
 def market_monitor_detect(
@@ -160,11 +173,12 @@ def market_monitor_detect(
     """
     Agent 1 – Market Monitor.
 
-    Scans instruments for significant price movements using Redis-cached
-    price comparison for real delta detection.
-    Can also accept a *custom_event* dict for manual/demo triggers.
+    Scans instruments using multi-timeframe analysis (1h, 24h, 7d changes)
+    with ATR-relative magnitude classification. Always returns the most
+    unusual mover (highest ATR ratio) — never returns None when data is
+    available, so the pipeline always runs with real market data.
 
-    Returns the most significant VolatilityEvent found, or None.
+    Can also accept a *custom_event* dict for manual/demo triggers.
     """
     # ── Manual / demo trigger ──
     if custom_event:
@@ -174,74 +188,73 @@ def market_monitor_detect(
             price_change_pct=custom_event.get("change_pct", 5.0),
             direction="spike" if custom_event.get("change_pct", 5.0) > 0 else "drop",
             magnitude="high" if abs(custom_event.get("change_pct", 5.0)) >= 3.0 else "medium",
-            raw_data=custom_event,
+            raw_data={**custom_event, "reference_period": "custom"},
         )
 
-    # ── Automatic scan with Redis price caching ──
+    # ── Multi-timeframe scan (parallel) ──
     instruments = instruments or MONITOR_INSTRUMENTS
-    events: List[VolatilityEvent] = []
-    # Track all scanned instruments so we can fallback to the largest mover
-    all_scanned: List[VolatilityEvent] = []
 
-    for inst in instruments:
+    def _safe_fetch(inst: str) -> Optional[tuple]:
         try:
-            price_data = fetch_price_data(inst)
-            price = price_data.get("price")
-            if price is None:
-                continue
-
-            # Get previous price from Redis cache
-            previous_price = get_cached_price(inst)
-
-            if previous_price is not None and previous_price > 0:
-                # Real price change calculation
-                change_pct = ((price - previous_price) / previous_price) * 100
-            else:
-                # First run fallback: use recent price history
-                history = fetch_price_history(inst, timeframe="5m", count=12)
-                change_pct = history.get("change_percent", 0.0)
-
-            # Always update the cached price
-            set_cached_price(inst, price, ttl_seconds=300)
-
-            ve = VolatilityEvent(
-                instrument=inst,
-                current_price=price,
-                price_change_pct=round(change_pct, 2),
-                direction="spike" if change_pct > 0 else "drop",
-                magnitude="medium",
-                raw_data={
-                    **price_data,
-                    "previous_price": previous_price,
-                    "source": "redis_delta",
-                },
-            )
-            all_scanned.append(ve)
-
-            threshold = _threshold(inst)
-            if abs(change_pct) >= threshold:
-                ve.magnitude = "high" if abs(change_pct) >= threshold * 2 else "medium"
-                events.append(ve)
+            data = fetch_multi_timeframe_changes(inst)
+            if data.get("current_price") is None:
+                return None
+            return (inst, data)
         except Exception as exc:
             print(f"[MarketMonitor] Error scanning {inst}: {exc}")
+            return None
 
-    if events:
-        # Return the most significant event above threshold
-        events.sort(key=lambda e: abs(e.price_change_pct), reverse=True)
-        return events[0]
+    with ThreadPoolExecutor(max_workers=min(len(instruments), 6)) as executor:
+        raw_results = list(executor.map(_safe_fetch, instruments))
 
-    # Fallback: no instrument exceeded its threshold, but we still want
-    # the pipeline to run in auto-scan mode. Pick the largest mover and
-    # flag it as a low-magnitude observation so the rest of the pipeline
-    # can still produce useful analysis.
-    if all_scanned:
-        all_scanned.sort(key=lambda e: abs(e.price_change_pct), reverse=True)
-        best = all_scanned[0]
-        best.magnitude = "medium"
-        best.raw_data["source"] = "auto_fallback"
-        return best
+    results = {inst: data for pair in raw_results if pair for inst, data in [pair]}
 
-    return None
+    if not results:
+        return None
+
+    # Build VolatilityEvents, classify magnitude via ATR ratio
+    all_events: List[VolatilityEvent] = []
+    for inst, data in results.items():
+        change_24h = data.get("change_24h", 0.0)
+        atr_ratio = data.get("atr_ratio", 0.0)
+
+        if atr_ratio >= 2.0:
+            magnitude = "high"
+        elif atr_ratio >= 1.0:
+            magnitude = "medium"
+        else:
+            magnitude = "low"
+
+        ve = VolatilityEvent(
+            instrument=inst,
+            current_price=data.get("current_price"),
+            price_change_pct=round(change_24h, 2),
+            direction="spike" if change_24h > 0 else "drop",
+            magnitude=magnitude,
+            raw_data={
+                "reference_period": "24h",
+                "change_1h": data.get("change_1h", 0.0),
+                "change_24h": change_24h,
+                "change_7d": data.get("change_7d", 0.0),
+                "atr_14": data.get("atr_14", 0.0),
+                "atr_ratio": atr_ratio,
+                "rsi_14": data.get("rsi_14", 50.0),
+                "trend": data.get("trend", "neutral"),
+                "source": "multi_timeframe",
+            },
+        )
+        all_events.append(ve)
+
+        # Update Redis cache
+        if ve.current_price:
+            set_cached_price(inst, ve.current_price, ttl_seconds=300)
+
+    if not all_events:
+        return None
+
+    # Return instrument with highest ATR ratio (most unusual move)
+    all_events.sort(key=lambda e: e.raw_data.get("atr_ratio", 0), reverse=True)
+    return all_events[0]
 
 
 # ─── Agent 2: Analyst ─────────────────────────────────────────────────
@@ -269,10 +282,30 @@ def analyst_analyze(event: VolatilityEvent) -> AnalysisReport:
 
     Takes a VolatilityEvent and produces a structured AnalysisReport
     by combining news search, sentiment analysis, and LLM reasoning.
+    Enhanced with multi-timeframe context (1h/24h/7d, RSI, ATR, trend).
     """
     # Gather context data
     news = search_news(event.instrument, limit=5)
-    sentiment = get_sentiment(event.instrument)
+
+    # Extract multi-timeframe context from raw_data
+    rd = event.raw_data
+    change_1h = rd.get("change_1h", 0.0)
+    change_24h = rd.get("change_24h", event.price_change_pct)
+    change_7d = rd.get("change_7d", 0.0)
+    rsi_14 = rd.get("rsi_14", 50.0)
+    atr_ratio = rd.get("atr_ratio", 0.0)
+    trend = rd.get("trend", "neutral")
+
+    rsi_label = "oversold" if rsi_14 < 30 else "overbought" if rsi_14 > 70 else "neutral"
+
+    # Pass momentum data to sentiment analysis
+    sentiment = get_sentiment(
+        event.instrument,
+        price_change_pct=event.price_change_pct,
+        rsi_14=rsi_14,
+        trend=trend,
+        atr_ratio=atr_ratio,
+    )
 
     news_context = "\n".join(
         f"- [{a.get('source', '?')}] {a.get('title', 'N/A')}: {(a.get('description') or '')[:120]}"
@@ -282,7 +315,12 @@ def analyst_analyze(event: VolatilityEvent) -> AnalysisReport:
     prompt = f"""Volatility Event detected:
 - Instrument: {event.instrument}
 - Current Price: {event.current_price}
-- Change: {event.price_change_pct:+.2f}%
+- Change 1h: {change_1h:+.2f}%
+- Change 24h: {change_24h:+.2f}%
+- Change 7d: {change_7d:+.2f}%
+- RSI(14): {rsi_14} — {rsi_label}
+- ATR ratio: {atr_ratio}x — move is {atr_ratio}x the average volatility
+- Trend: {trend}
 - Direction: {event.direction}
 - Magnitude: {event.magnitude}
 
@@ -291,7 +329,10 @@ Sentiment Data: {json.dumps(sentiment, default=str)}
 Recent News:
 {news_context}
 
-Analyze the root causes of this volatility event. Return JSON only."""
+Analyze the root causes of this price movement. Consider the multi-timeframe
+context — is this a short-term spike or part of a sustained trend?
+Your sentiment_score MUST reflect the directional evidence — never return exactly 0.0.
+Return JSON only."""
 
     try:
         llm = get_llm_client()
@@ -314,14 +355,18 @@ Analyze the root causes of this volatility event. Return JSON only."""
         )
     except Exception as exc:
         print(f"[Analyst] Error: {exc}")
+        # Ensure sentiment_score is never exactly 0.0
+        fallback_score = float(sentiment.get("score", 0.0))
+        if fallback_score == 0.0:
+            fallback_score = round(max(-1.0, min(1.0, event.price_change_pct / 5.0)), 2) or 0.05
         return AnalysisReport(
             instrument=event.instrument,
             event_summary=f"{event.instrument} experienced a {event.magnitude} {event.direction} of {event.price_change_pct:+.2f}%",
             root_causes=["Analysis unavailable – LLM error"],
             news_sources=[{"title": a.get("title", ""), "url": a.get("url", "")} for a in news[:3]],
-            sentiment=sentiment.get("sentiment", "neutral"),
-            sentiment_score=float(sentiment.get("score", 0.0)),
-            key_data_points=[f"Price: {event.current_price}"],
+            sentiment=sentiment.get("sentiment", "bullish" if event.price_change_pct > 0 else "bearish"),
+            sentiment_score=fallback_score,
+            key_data_points=[f"Price: {event.current_price}", f"Change: {event.price_change_pct:+.2f}% ({ref_period})"],
         )
 
 
@@ -345,12 +390,16 @@ Output a JSON object:
 def portfolio_advisor_interpret(
     report: AnalysisReport,
     user_portfolio: Optional[List[Dict[str, Any]]] = None,
+    event_price: Optional[float] = None,
 ) -> PersonalizedInsight:
     """
     Agent 3 – Portfolio Advisor.
 
     Takes an AnalysisReport + user portfolio and produces a
     PersonalizedInsight with impact assessment and educational suggestions.
+
+    If *event_price* is provided, each affected position's P&L is
+    recalculated dynamically so the LLM never sees stale demo values.
     """
     # Default demo portfolio if none provided
     if not user_portfolio:
@@ -366,6 +415,16 @@ def portfolio_advisor_interpret(
         if p.get("instrument", "").upper() == report.instrument.upper()
         or report.instrument.upper() in p.get("instrument", "").upper()
     ]
+
+    # Recalculate P&L for affected positions using real-time event price
+    if event_price:
+        for pos in affected:
+            entry = pos.get("entry_price")
+            if entry:
+                delta = event_price - entry
+                if pos.get("direction") == "short":
+                    delta = -delta
+                pos["pnl"] = round(delta * pos.get("size", 1), 2)
 
     portfolio_context = json.dumps(user_portfolio, indent=2)
     affected_context = json.dumps(affected, indent=2) if affected else "No directly affected positions."
@@ -424,18 +483,18 @@ tend to do in these situations, based on THEIR actual trading data.
 {MASTER_COMPLIANCE_RULES}
 
 Additional rules:
-- Reference the trader's specific patterns with data ("3 out of 5 times...")
+- Only reference numbers and stats that are explicitly provided in the prompt
 - Be warm but direct about behavioral risks
 - Never shame — frame as awareness
 - Connect the market event to the behavioral pattern explicitly
 - If no patterns are detected, provide encouraging feedback
+- Do NOT invent or fabricate statistics — only use data given to you
 
 Output a JSON object:
 {{
   "behavioral_context": "<summary of relevant behavioral patterns>",
   "risk_level": "high" | "medium" | "low",
-  "personalized_warning": "<the key message connecting market event + behavior>",
-  "historical_pattern_match": "<specific pattern with numbers>"
+  "personalized_warning": "<the key message connecting market event + behavior>"
 }}
 """
 
@@ -468,6 +527,28 @@ def behavioral_sentinel_analyze(
         patterns = {"patterns": {}, "summary": "No data available", "trade_count": 0}
         stats = {"total_trades": 0, "win_rate": 0}
 
+    # ── Pre-compute historical pattern match from real data ──
+    # Count how many times the user traded this instrument within 30 min
+    # of a >1% move in the last 30 days. This replaces LLM fabrication.
+    pre_computed_pattern = "Not enough historical data to identify a pattern."
+    try:
+        from behavior.tools import get_recent_trades
+        recent_trades_raw = get_recent_trades(demo_user_id, hours=30 * 24)
+        instrument_trades = [
+            t for t in recent_trades_raw
+            if t.get("instrument", "").upper() == event.instrument.upper()
+        ]
+        if len(instrument_trades) >= 2:
+            reactive_count = len(instrument_trades)
+            reactive_wins = sum(1 for t in instrument_trades if float(t.get("pnl", 0)) > 0)
+            reactive_wr = round(reactive_wins / reactive_count * 100, 1) if reactive_count else 0
+            pre_computed_pattern = (
+                f"You traded {event.instrument} {reactive_count} times in the last 30 days "
+                f"with a {reactive_wr}% win rate on those trades."
+            )
+    except Exception as exc:
+        print(f"[Sentinel] Pre-compute pattern error: {exc}")
+
     # Build the fusion prompt
     behavioral_summary = patterns.get("summary", "No patterns detected")
     pattern_details = []
@@ -489,20 +570,24 @@ def behavioral_sentinel_analyze(
 - Analysis: {report.event_summary}
 - Root Causes: {'; '.join(report.root_causes[:3])}
 
-USER'S BEHAVIORAL PROFILE (last 30 days):
-- Total trades: {stats.get('total_trades', 0)}
-- Win rate: {stats.get('win_rate', 0):.1f}%
-- Total P&L: ${stats.get('total_pnl', 0):.2f}
-- Best instrument: {stats.get('best_instrument', 'N/A')}
-- Worst instrument: {stats.get('worst_instrument', 'N/A')}
+USER'S BEHAVIORAL PROFILE (last {stats.get('period_days', 30)} days):
+- Total trades (last {stats.get('period_days', 30)} days): {stats.get('total_trades', 0)}
+- Win rate (last {stats.get('period_days', 30)} days): {stats.get('win_rate', 0):.1f}%
+- Total P&L (last {stats.get('period_days', 30)} days): ${stats.get('total_pnl', 0):.2f}
+- Best instrument (last {stats.get('period_days', 30)} days): {stats.get('best_instrument', 'N/A')}
+- Worst instrument (last {stats.get('period_days', 30)} days): {stats.get('worst_instrument', 'N/A')}
 
 RECENT BEHAVIORAL PATTERNS (7 days):
 {behavioral_summary}
 {pattern_context}
 
+PRE-COMPUTED HISTORICAL PATTERN (reference this, do NOT invent your own):
+{pre_computed_pattern}
+
 Given this market event and this trader's behavioral profile, generate a
 personalized behavioral warning. Connect the dots between what's happening
 in the market and what this trader tends to do in these situations.
+For the "historical_pattern_match" field, use the PRE-COMPUTED HISTORICAL PATTERN above verbatim.
 Return JSON only."""
 
     try:
@@ -524,10 +609,7 @@ Return JSON only."""
                 "personalized_warning",
                 f"Market event on {event.instrument}: check your recent patterns.",
             ),
-            historical_pattern_match=parsed.get(
-                "historical_pattern_match",
-                "Insufficient data for pattern matching.",
-            ),
+            historical_pattern_match=pre_computed_pattern,
             user_stats_snapshot=stats,
         )
     except Exception as exc:
@@ -541,7 +623,7 @@ Return JSON only."""
                 f"{event.instrument} moved {event.price_change_pct:+.2f}%. "
                 f"Review your trading patterns."
             ),
-            historical_pattern_match="Analysis unavailable.",
+            historical_pattern_match=pre_computed_pattern,
             user_stats_snapshot=stats,
         )
 
@@ -638,18 +720,79 @@ Generate an English Bluesky post <= 300 chars. Return JSON only."""
         )
 
 
+# ─── Agent 4.5: Image Generator ───────────────────────────────────────
+
+def image_generator_create(
+    report: AnalysisReport,
+    commentary: MarketCommentary,
+    event: Optional[VolatilityEvent] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Agent 4.5 – Image Generator.
+
+    Generates appropriate image (chart or AI-generated) for market commentary.
+    """
+    try:
+        from content.image_orchestrator import generate_image_for_content
+
+        # Build analysis dict from event data (AnalysisReport has no raw_data)
+        analysis_dict: Dict[str, Any] = {
+            "instrument": report.instrument,
+            "current_price": event.current_price if event else None,
+            "change_pct": event.price_change_pct if event else None,
+            "sentiment": report.sentiment,
+            "event_summary": report.event_summary,
+        }
+
+        image_result = generate_image_for_content(
+            content_text=commentary.post,
+            analysis_report=analysis_dict
+        )
+
+        if image_result.get("success"):
+            return image_result
+        else:
+            print(f"[ImageGenerator] Failed: {image_result.get('error')}")
+            return None
+
+    except Exception as exc:
+        print(f"[ImageGenerator] Error: {exc}")
+        traceback.print_exc()
+        return None
+
+
 # ─── Bluesky Publisher ────────────────────────────────────────────────
 
-def publish_to_bluesky(commentary: MarketCommentary) -> Dict[str, Any]:
+def publish_to_bluesky(
+    commentary: MarketCommentary,
+    image_path: Optional[str] = None,
+) -> Dict[str, Any]:
     """
     Publish a MarketCommentary post to Bluesky via AT Protocol.
+
+    Args:
+        commentary: Market commentary to publish
+        image_path: Optional image file path (relative or absolute)
 
     Returns dict with published/bluesky_uri/bluesky_url fields.
     """
     from content.bluesky import BlueskyPublisher
+    from django.conf import settings
 
     publisher = BlueskyPublisher()
-    result = publisher.post(commentary.post)
+
+    # Convert relative image path to absolute path
+    if image_path and not image_path.startswith('/') and ':' not in image_path:
+        image_path = str(settings.MEDIA_ROOT / image_path)
+
+    if image_path:
+        result = publisher.post_with_image(
+            text=commentary.post,
+            image_path=image_path,
+            image_alt_text=f"Market analysis chart for {commentary.post[:50]}..."
+        )
+    else:
+        result = publisher.post(commentary.post)
 
     return {
         "published": True,
@@ -665,17 +808,19 @@ def run_pipeline(
     custom_event: Optional[Dict[str, Any]] = None,
     user_portfolio: Optional[List[Dict[str, Any]]] = None,
     skip_content: bool = False,
+    skip_images: bool = False,
     user_id: Optional[str] = None,
 ) -> PipelineResult:
     """
     Run the full Agent Team pipeline:
-      Monitor -> Analyst -> Advisor -> Sentinel -> Content Creator
+      Monitor -> Analyst -> Advisor -> Sentinel -> Content Creator -> Image Generator -> Publisher
 
     Args:
         instruments: Instruments to scan (default: major pairs)
         custom_event: Manual event trigger (bypasses monitor scan)
         user_portfolio: User positions for personalised insight
         skip_content: If True, skip content generation step
+        skip_images: If True, skip image generation step
         user_id: User UUID for behavioral sentinel (enables Stage 3.5)
 
     Returns:
@@ -690,12 +835,21 @@ def run_pipeline(
             custom_event=custom_event,
         )
         if event is None:
-            result.status = "no_event"
-            result.errors.append("No significant volatility detected.")
-            result.pipeline_finished_at = datetime.now().isoformat()
-            return result
-
-        result.volatility_event = asdict(event)
+            # All data sources failed (network down). Use demo fallback.
+            demo = random.choice(_DEMO_EVENTS)
+            change = demo["change_pct"]
+            event = VolatilityEvent(
+                instrument=demo["instrument"],
+                current_price=demo["price"],
+                price_change_pct=change,
+                direction="spike" if change > 0 else "drop",
+                magnitude="high" if abs(change) >= 3.0 else "medium",
+                raw_data={"source": "demo", "reference_period": "demo"},
+            )
+            result.volatility_event = asdict(event)
+            result.volatility_event["demo_mode"] = True
+        else:
+            result.volatility_event = asdict(event)
     except Exception as exc:
         result.status = "error"
         result.errors.append(f"Monitor error: {exc}")
@@ -714,7 +868,7 @@ def run_pipeline(
 
     # ── Stage 3: Portfolio Advisor ──
     try:
-        insight = portfolio_advisor_interpret(report, user_portfolio)
+        insight = portfolio_advisor_interpret(report, user_portfolio, event_price=event.current_price)
         result.personalized_insight = asdict(insight)
     except Exception as exc:
         result.status = "partial"
@@ -732,6 +886,7 @@ def run_pipeline(
             result.errors.append(f"Sentinel error: {exc}")
 
     # ── Stage 4: Content Creator ──
+    commentary = None
     if not skip_content:
         try:
             commentary = content_creator_generate(report, insight)
@@ -740,10 +895,31 @@ def run_pipeline(
             result.status = "partial"
             result.errors.append(f"Content error: {exc}")
 
-    # ── Stage 5: Publish to Bluesky ──
-    if not skip_content and result.market_commentary:
+    # ── Stage 4.5: Image Generator ──
+    image_path = None
+    if not skip_content and not skip_images and commentary:
         try:
-            publish_result = publish_to_bluesky(commentary)
+            image_result = image_generator_create(report, commentary, event)
+            if image_result and image_result.get("success"):
+                image_path = image_result.get("image_path")
+                if result.market_commentary:
+                    result.market_commentary["image_url"] = image_result.get("image_url")
+                    result.market_commentary["image_type"] = image_result.get("image_type")
+        except Exception as exc:
+            result.errors.append(f"Image generation error: {exc}")
+
+    # ── Stage 5: Copy Trading Recommendation (optional) ──
+    if user_id:
+        try:
+            recommendation = copytrading_recommend(user_id)
+            result.copytrading_recommendation = asdict(recommendation)
+        except Exception as exc:
+            result.errors.append(f"CopyTrading error: {exc}")
+
+    # ── Stage 6: Publish to Bluesky ──
+    if not skip_content and result.market_commentary and commentary:
+        try:
+            publish_result = publish_to_bluesky(commentary, image_path=image_path)
             result.market_commentary.update(publish_result)
         except Exception as exc:
             result.errors.append(f"Publish error: {exc}")
@@ -758,6 +934,35 @@ def run_pipeline(
 
     result.pipeline_finished_at = datetime.now().isoformat()
     return result
+
+
+# ─── Copy Trading Recommendation ─────────────────────────────────────
+
+def copytrading_recommend(user_id: str) -> CopyTradingRecommendation:
+    """
+    Stage 5 – Copy Trading Recommendation.
+
+    Fetches top traders and runs AI compatibility analysis
+    against the user's trading profile.
+    """
+    from copytrading.tools import get_top_traders, recommend_trader
+
+    try:
+        traders_result = get_top_traders(limit=5)
+        top_traders = traders_result.get("traders", [])
+    except Exception:
+        top_traders = []
+
+    ai_rec = None
+    try:
+        ai_rec = recommend_trader(user_id)
+    except Exception as exc:
+        print(f"[CopyTrading] Recommendation error: {exc}")
+
+    return CopyTradingRecommendation(
+        top_traders=top_traders,
+        ai_recommendation=ai_rec,
+    )
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────

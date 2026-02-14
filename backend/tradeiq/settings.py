@@ -36,6 +36,9 @@ INSTALLED_APPS = [
     "agents",
     "chat",
     "demo",
+    "copytrading",
+    "trading",
+    "deriv_auth",
 ]
 
 MIDDLEWARE = [
@@ -113,6 +116,15 @@ USE_I18N = True
 USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# Media files (charts, AI images)
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
+
+# Ensure media folders exist
+os.makedirs(MEDIA_ROOT / "charts", exist_ok=True)
+os.makedirs(MEDIA_ROOT / "ai_images", exist_ok=True)
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # DRF
@@ -149,20 +161,38 @@ CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only allow all origins in debug/demo mode
 BLUESKY_HANDLE = os.environ.get("BLUESKY_HANDLE", "")
 BLUESKY_APP_PASSWORD = os.environ.get("BLUESKY_APP_PASSWORD", "")
 
+# Google Gemini (AI image generation)
+GOOGLE_GEMINI_API_KEY = os.environ.get("GOOGLE_GEMINI_API_KEY", "")
+
 # Fixtures for demo scenarios (Section 10, 14)
 FIXTURE_DIRS = [os.path.join(BASE_DIR, "fixtures")]
 
 # Channels – prefer Redis (Upstash), fall back to in-memory
 _redis_url = os.environ.get("REDIS_URL", "")
 if _redis_url:
-    CHANNEL_LAYERS = {
-        "default": {
-            "BACKEND": "channels_redis.core.RedisChannelLayer",
-            "CONFIG": {
-                "hosts": [_redis_url],
+    try:
+        import channels_redis  # noqa: F401
+        CHANNEL_LAYERS = {
+            "default": {
+                "BACKEND": "channels_redis.core.RedisChannelLayer",
+                "CONFIG": {
+                    "hosts": [_redis_url],
+                },
             },
-        },
-    }
+        }
+    except ImportError:
+        import sys
+        print(
+            "WARNING: REDIS_URL is set but channels-redis is not installed. "
+            "Falling back to InMemoryChannelLayer. "
+            "Install with: pip install channels-redis",
+            file=sys.stderr,
+        )
+        CHANNEL_LAYERS = {
+            "default": {
+                "BACKEND": "channels.layers.InMemoryChannelLayer",
+            },
+        }
 else:
     CHANNEL_LAYERS = {
         "default": {

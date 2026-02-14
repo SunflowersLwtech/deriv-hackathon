@@ -11,8 +11,11 @@ const navLinks = [
   { href: "/", label: "LIVE" },
   { href: "/market", label: "MARKET" },
   { href: "/behavior", label: "BEHAVIOR" },
+  { href: "/copytrading", label: "COPY" },
+  { href: "/trading", label: "TRADE" },
   { href: "/content", label: "CONTENT" },
   { href: "/pipeline", label: "AGENTS" },
+  { href: "/demo", label: "DEMO" },
 ];
 
 export default function Navbar() {

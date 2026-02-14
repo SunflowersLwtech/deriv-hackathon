@@ -17,6 +17,11 @@ daphne>=4.0,<5.0
 
 # AI/LLM
 openai>=1.0.0,<2.0.0  # For DeepSeek API (OpenAI-compatible)
+google-genai>=0.2.0  # Google Gemini & Imagen 4 API
+
+# Image Generation & Processing
+matplotlib>=3.8.0,<4.0.0  # Chart generation
+Pillow>=10.0.0,<11.0.0  # Image processing
 
 # External APIs
 atproto>=0.0.18,<1.0.0  # Bluesky AT Protocol
@@ -26,11 +31,17 @@ requests>=2.31.0,<3.0.0  # For NewsAPI and external APIs
 redis[hiredis]>=5.0,<6.0
 channels-redis>=4.1,<5.0
 
+# WebSocket client (for Deriv API)
+websockets>=12.0,<14.0
+
 # Utilities
 python-dotenv>=1.0,<2.0
 
 # Authentication
 PyJWT>=2.8,<3.0
+
+# Encryption (Deriv token storage)
+cryptography>=41.0,<44.0
 
 # Optional: Development tools (uncomment if needed)
 # ipython>=8.0,<9.0

@@ -45,7 +45,8 @@ class UserProfileViewSet(viewsets.ModelViewSet):
 class TradeViewSet(viewsets.ModelViewSet):
     queryset = Trade.objects.all()
     serializer_class = TradeSerializer
-    permission_classes = [AllowAny]  # Demo mode - allow all access
+    # Keep reads public while requiring auth for writes.
+    permission_classes = [IsAuthenticatedOrReadOnly]
     
     def get_queryset(self):
         """Filter trades by user if user_id provided."""
@@ -74,6 +75,22 @@ class TradeViewSet(viewsets.ModelViewSet):
         except Exception as e:
             print(f"Error in behavioral analysis: {e}")
             # Don't fail the trade creation if analysis fails
+
+        # Trigger live narrator
+        try:
+            from behavior.narrator import narrate_trade_event
+            narrate_trade_event(
+                user_id=str(trade.user_id),
+                trade_data={
+                    "instrument": trade.instrument,
+                    "direction": trade.direction,
+                    "entry_price": str(trade.entry_price) if trade.entry_price else None,
+                    "pnl": str(trade.pnl) if trade.pnl else None,
+                },
+                event_type="new_trade",
+            )
+        except Exception:
+            pass  # Narrator failure must not block trade creation
         
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
@@ -88,19 +105,6 @@ class TradeViewSet(viewsets.ModelViewSet):
         if analysis['needs_nudge']:
             # Generate AI-powered nudge
             nudge = generate_behavioral_nudge_with_ai(str(user.id), analysis)
-            
-            # Persist nudge to database
-            try:
-                from django.db import connection
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        """INSERT INTO nudges (user_id, nudge_type, message, trigger_reason, severity)
-                           VALUES (%s, %s, %s, %s, %s)""",
-                        [str(user.id), nudge.get('nudge_type', ''), nudge.get('message', ''),
-                         analysis.get('summary', ''), nudge.get('severity', 'low')]
-                    )
-            except Exception as e:
-                print(f"Error saving nudge: {e}")
 
             # Send nudge via WebSocket
             channel_layer = get_channel_layer()
@@ -203,13 +207,15 @@ class TradeViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def sync_deriv(self, request):
         """
-        Sync real trades from Deriv API using DERIV_TOKEN.
+        Sync real trades from Deriv API.
         POST /api/behavior/trades/sync_deriv/
         {"user_id": "optional-uuid", "days_back": 30}
 
-        Uses the live Deriv API to pull profit_table data and create
-        Trade objects in the database, then runs behavioral analysis.
+        Uses per-user Deriv token (from deriv_auth) with env DERIV_TOKEN fallback.
         """
+        from deriv_auth.middleware import get_deriv_token
+        from .trade_sync import sync_trades_for_user
+
         user_id = request.data.get("user_id", DEMO_USER_ID)
         days_back = int(request.data.get("days_back", 30))
 
@@ -228,25 +234,22 @@ class TradeViewSet(viewsets.ModelViewSet):
             )
             user_id = str(user.id)
 
-        api_token = os.environ.get("DERIV_TOKEN", "")
+        api_token = get_deriv_token(request)
         if not api_token:
             return Response(
-                {"error": "DERIV_TOKEN not configured in environment."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                {"error": "No Deriv token available. Connect your Deriv account or set DERIV_TOKEN."},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Sync trades from Deriv
-        try:
-            from .deriv_client import get_deriv_client
-            client = get_deriv_client()
-            sync_result = client.sync_trades_to_database(
-                user_id=user_id,
-                api_token=api_token,
-                days_back=days_back,
-            )
-        except Exception as exc:
+        sync_result = sync_trades_for_user(
+            user_id=user_id,
+            api_token=api_token,
+            days_back=days_back,
+        )
+
+        if not sync_result["success"]:
             return Response(
-                {"error": f"Deriv sync failed: {str(exc)}"},
+                {"error": "; ".join(sync_result["errors"])},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
@@ -257,12 +260,18 @@ class TradeViewSet(viewsets.ModelViewSet):
         except Exception as exc:
             analysis = {"error": str(exc)}
 
+        real_count = Trade.objects.filter(user_id=user_id, is_mock=False).count()
+        demo_count = Trade.objects.filter(user_id=user_id, is_mock=True).count()
+
         return Response({
             "status": "synced",
             "user_id": user_id,
             "trades_synced": sync_result.get("trades_created", 0),
             "trades_updated": sync_result.get("trades_updated", 0),
-            "total_trades": Trade.objects.filter(user_id=user_id).count(),
+            "total_trades": real_count + demo_count,
+            "real_trades": real_count,
+            "demo_trades": demo_count,
+            "is_demo": real_count == 0,
             "analysis_summary": analysis,
         })
 
@@ -400,7 +409,7 @@ class BehavioralMetricViewSet(viewsets.ModelViewSet):
             defaults={
                 'name': 'Demo Trader',
                 'preferences': {'demo_mode': True},
-                'watchlist': ['EUR/USD', 'BTC/USD', 'GOLD']
+                'watchlist': ['BTC/USD', 'ETH/USD', 'Volatility 75']
             }
         )
         
@@ -414,6 +423,31 @@ class BehavioralMetricViewSet(viewsets.ModelViewSet):
 
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
+from dataclasses import asdict
+
+
+class TradingTwinView(APIView):
+    """
+    POST /api/behavior/trading-twin/
+    Generate user's Trading Twin analysis.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        from behavior.trading_twin import generate_trading_twin
+        from deriv_auth.middleware import has_real_deriv_account
+
+        user_id = request.data.get("user_id", DEMO_USER_ID)
+        days = int(request.data.get("days", 30))
+        starting_equity = float(request.data.get("starting_equity", 10000))
+
+        # Prefer real data when user has a connected Deriv account
+        prefer_real = has_real_deriv_account(request) or Trade.objects.filter(
+            user_id=user_id, is_mock=False
+        ).exists()
+
+        result = generate_trading_twin(user_id, days, starting_equity, prefer_real=prefer_real)
+        return Response(asdict(result))
 
 
 class DerivPortfolioView(APIView):
@@ -421,9 +455,10 @@ class DerivPortfolioView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        api_token = os.environ.get("DERIV_TOKEN", "")
+        from deriv_auth.middleware import get_deriv_token as _get_token
+        api_token = _get_token(request)
         if not api_token:
-            return Response({"error": "DERIV_TOKEN not configured"}, status=500)
+            return Response({"error": "No Deriv token available"}, status=400)
         try:
             from .deriv_client import get_deriv_client
             client = get_deriv_client()
@@ -438,9 +473,10 @@ class DerivBalanceView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        api_token = os.environ.get("DERIV_TOKEN", "")
+        from deriv_auth.middleware import get_deriv_token as _get_token
+        api_token = _get_token(request)
         if not api_token:
-            return Response({"error": "DERIV_TOKEN not configured"}, status=500)
+            return Response({"error": "No Deriv token available"}, status=400)
         try:
             from .deriv_client import get_deriv_client
             client = get_deriv_client()
@@ -455,9 +491,10 @@ class DerivRealityCheckView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        api_token = os.environ.get("DERIV_TOKEN", "")
+        from deriv_auth.middleware import get_deriv_token as _get_token
+        api_token = _get_token(request)
         if not api_token:
-            return Response({"error": "DERIV_TOKEN not configured"}, status=500)
+            return Response({"error": "No Deriv token available"}, status=400)
         try:
             from .deriv_client import get_deriv_client
             client = get_deriv_client()
@@ -465,3 +502,66 @@ class DerivRealityCheckView(APIView):
             return Response(check)
         except Exception as exc:
             return Response({"error": str(exc)}, status=500)
+
+
+class SyncTradesView(APIView):
+    """
+    POST /api/behavior/sync-trades/
+    Dedicated endpoint to sync real trades from a user's connected Deriv account.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        from deriv_auth.middleware import get_deriv_token
+        from .trade_sync import sync_trades_for_user
+
+        user_id = request.data.get("user_id", DEMO_USER_ID)
+        days_back = int(request.data.get("days_back", 30))
+
+        # Resolve user
+        try:
+            user = UserProfile.objects.get(id=user_id)
+        except UserProfile.DoesNotExist:
+            user, _ = UserProfile.objects.get_or_create(
+                id=DEMO_USER_ID,
+                defaults={
+                    "email": "alex@tradeiq.demo",
+                    "name": "Alex Demo",
+                    "preferences": {"theme": "dark"},
+                    "watchlist": [],
+                },
+            )
+            user_id = str(user.id)
+
+        api_token = get_deriv_token(request)
+        if not api_token:
+            return Response(
+                {"error": "No Deriv token available. Connect your Deriv account or set DERIV_TOKEN."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        sync_result = sync_trades_for_user(
+            user_id=user_id,
+            api_token=api_token,
+            days_back=days_back,
+        )
+
+        if not sync_result["success"]:
+            return Response(
+                {"error": "; ".join(sync_result["errors"])},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        real_count = Trade.objects.filter(user_id=user_id, is_mock=False).count()
+        demo_count = Trade.objects.filter(user_id=user_id, is_mock=True).count()
+
+        return Response({
+            "status": "synced",
+            "user_id": user_id,
+            "trades_synced": sync_result.get("trades_created", 0),
+            "trades_updated": sync_result.get("trades_updated", 0),
+            "total_trades": real_count + demo_count,
+            "real_trades": real_count,
+            "demo_trades": demo_count,
+            "is_demo": real_count == 0,
+        })

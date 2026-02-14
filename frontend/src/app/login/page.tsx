@@ -123,10 +123,18 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      {/* Ambient background glow */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-profit/5 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent/5 rounded-full blur-3xl" />
+      {/* Hero video background */}
+      <div className="fixed inset-0 overflow-hidden">
+        <video
+          autoPlay
+          muted
+          loop
+          playsInline
+          className="absolute inset-0 w-full h-full object-cover"
+        >
+          <source src="/videos/hero-reveal.mp4" type="video/mp4" />
+        </video>
+        <div className="absolute inset-0 bg-black/40" />
       </div>
 
       <div className="relative z-10 w-full max-w-sm">
@@ -153,7 +161,7 @@ export default function LoginPage() {
         </div>
 
         {/* Login Card */}
-        <div className="bg-card border border-border rounded-sm p-6">
+        <div className="bg-card/80 backdrop-blur-xl border border-border rounded-sm p-6">
           <h2 className="text-sm font-semibold text-white text-center mb-1 tracking-wide">
             Welcome to TradeIQ
           </h2>
@@ -205,6 +213,22 @@ export default function LoginPage() {
             <span className="text-[9px] text-muted-foreground mono-data tracking-wider">OR</span>
             <div className="flex-1 h-px bg-border" />
           </div>
+
+          {/* Connect Deriv Account */}
+          <button
+            onClick={() => {
+              const appId = process.env.NEXT_PUBLIC_DERIV_APP_ID || "125719";
+              const oauthUrl = process.env.NEXT_PUBLIC_DERIV_OAUTH_URL || "https://oauth.deriv.com/oauth2/authorize";
+              window.location.assign(`${oauthUrl}?app_id=${appId}&l=en&brand=deriv`);
+            }}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-sm border border-border bg-surface text-white font-medium text-[12px] tracking-wide hover:bg-surface-hover transition-all duration-200 mb-3"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+            </svg>
+            Connect Deriv Account
+          </button>
 
           {/* Demo Access */}
           <Link

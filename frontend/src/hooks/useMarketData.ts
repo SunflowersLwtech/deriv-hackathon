@@ -36,25 +36,27 @@ const FALLBACK_MARKET_DATA: MarketOverviewItem[] = [];
 const FALLBACK_INSIGHTS: InsightItem[] = [];
 
 const ICON_MAP: Record<string, string> = {
+  "BTC/USD": "₿",
+  "ETH/USD": "Ξ",
+  "Volatility 75": "📊",
+  "Volatility 100": "📈",
+  "Volatility 10": "📉",
   "EUR/USD": "💶",
   "GBP/USD": "💷",
   "USD/JPY": "💴",
-  "BTC/USD": "₿",
-  "ETH/USD": "Ξ",
   GOLD: "🥇",
-  "Volatility 75": "📊",
-  "Volatility 100": "📈",
 };
 
 const NAME_MAP: Record<string, string> = {
+  "BTC/USD": "Bitcoin / US Dollar",
+  "ETH/USD": "Ethereum / US Dollar",
+  "Volatility 75": "Volatility 75 Index",
+  "Volatility 100": "Volatility 100 Index",
+  "Volatility 10": "Volatility 10 Index",
   "EUR/USD": "Euro / US Dollar",
   "GBP/USD": "British Pound / US Dollar",
   "USD/JPY": "US Dollar / Japanese Yen",
-  "BTC/USD": "Bitcoin / US Dollar",
-  "ETH/USD": "Ethereum / US Dollar",
   GOLD: "Gold Spot",
-  "Volatility 75": "Volatility 75 Index",
-  "Volatility 100": "Volatility 100 Index",
 };
 
 
@@ -182,8 +184,8 @@ export function useMarketInsights() {
 }
 
 const DEFAULT_INSTRUMENTS = [
-  "frxEURUSD", "frxGBPUSD", "frxUSDJPY",
-  "cryBTCUSD", "frxXAUUSD", "R_100",
+  "BTC/USD", "ETH/USD", "Volatility 100",
+  "Volatility 75", "Volatility 10", "EUR/USD",
 ];
 
 export function useInstrumentUniverse() {
@@ -191,7 +193,7 @@ export function useInstrumentUniverse() {
     // Use the fast /market/instruments/ endpoint (simple GET, no LLM/WS)
     // instead of getMarketBrief which is slow (6 Deriv WS + LLM summary).
     const resp = await api.getActiveSymbols();
-    const symbols = (resp.instruments || []).map((s) => s.symbol || s.display_name).filter(Boolean);
+    const symbols = (resp.instruments || []).map((s) => s.display_name || s.symbol).filter(Boolean);
     return symbols.length > 0 ? symbols.slice(0, 20) : DEFAULT_INSTRUMENTS;
   }, []);
 

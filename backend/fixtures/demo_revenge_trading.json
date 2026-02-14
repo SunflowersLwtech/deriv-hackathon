@@ -6,7 +6,7 @@
       "email": "demo@tradeiq.local",
       "name": "Demo User",
       "preferences": {},
-      "watchlist": ["EUR/USD", "GBP/USD"]
+      "watchlist": ["BTC/USD", "ETH/USD"]
     }
   },
   {
@@ -14,10 +14,10 @@
     "pk": "bbbbbbbb-0001-4000-8000-000000000001",
     "fields": {
       "user": "aaaaaaaa-0000-4000-8000-000000000001",
-      "instrument": "EUR/USD",
+      "instrument": "BTC/USD",
       "direction": "sell",
-      "entry_price": "1.0850",
-      "exit_price": "1.0830",
+      "entry_price": "97500",
+      "exit_price": "97300",
       "pnl": "-200",
       "duration_seconds": 300,
       "opened_at": "2026-02-07T10:00:00Z",
@@ -30,10 +30,10 @@
     "pk": "bbbbbbbb-0002-4000-8000-000000000002",
     "fields": {
       "user": "aaaaaaaa-0000-4000-8000-000000000001",
-      "instrument": "EUR/USD",
+      "instrument": "BTC/USD",
       "direction": "sell",
-      "entry_price": "1.0835",
-      "exit_price": "1.0820",
+      "entry_price": "97350",
+      "exit_price": "97200",
       "pnl": "-150",
       "duration_seconds": 45,
       "opened_at": "2026-02-07T10:02:00Z",
@@ -46,10 +46,10 @@
     "pk": "bbbbbbbb-0003-4000-8000-000000000003",
     "fields": {
       "user": "aaaaaaaa-0000-4000-8000-000000000001",
-      "instrument": "EUR/USD",
+      "instrument": "BTC/USD",
       "direction": "buy",
-      "entry_price": "1.0825",
-      "exit_price": "1.0807",
+      "entry_price": "97100",
+      "exit_price": "96920",
       "pnl": "-180",
       "duration_seconds": 30,
       "opened_at": "2026-02-07T10:04:00Z",
@@ -62,10 +62,10 @@
     "pk": "bbbbbbbb-0004-4000-8000-000000000004",
     "fields": {
       "user": "aaaaaaaa-0000-4000-8000-000000000001",
-      "instrument": "GBP/USD",
+      "instrument": "ETH/USD",
       "direction": "sell",
-      "entry_price": "1.2650",
-      "exit_price": "1.2625",
+      "entry_price": "3150",
+      "exit_price": "3125",
       "pnl": "-250",
       "duration_seconds": 20,
       "opened_at": "2026-02-07T10:05:30Z",
@@ -78,10 +78,10 @@
     "pk": "bbbbbbbb-0005-4000-8000-000000000005",
     "fields": {
       "user": "aaaaaaaa-0000-4000-8000-000000000001",
-      "instrument": "EUR/USD",
+      "instrument": "BTC/USD",
       "direction": "buy",
-      "entry_price": "1.0810",
-      "exit_price": "1.0780",
+      "entry_price": "96800",
+      "exit_price": "96500",
       "pnl": "-300",
       "duration_seconds": 15,
       "opened_at": "2026-02-07T10:07:00Z",

@@ -1,162 +1,16 @@
 "use client";
 
-import { useState, useCallback } from "react";
 import AppShell from "@/components/layout/AppShell";
 import { cn } from "@/lib/utils";
-import api, {
-  type PipelineResponse,
-  type CustomEvent,
-  type PortfolioPosition,
-} from "@/lib/api";
-
-type StageStatus = "idle" | "running" | "done" | "error";
-
-interface StageState {
-  monitor: StageStatus;
-  analyst: StageStatus;
-  advisor: StageStatus;
-  sentinel: StageStatus;
-  content: StageStatus;
-}
-
-const DEMO_USER_ID = "d1000000-0000-0000-0000-000000000001";
-
-const DEMO_EVENTS: { label: string; event: CustomEvent }[] = [
-  { label: "BTC +5.2%", event: { instrument: "BTC/USD", price: 97500, change_pct: 5.2 } },
-  { label: "ETH -4.1%", event: { instrument: "ETH/USD", price: 3100, change_pct: -4.1 } },
-  { label: "EUR/USD +0.8%", event: { instrument: "EUR/USD", price: 1.092, change_pct: 0.8 } },
-  { label: "GOLD +1.5%", event: { instrument: "GOLD", price: 2880, change_pct: 1.5 } },
-];
-
-const DEMO_PORTFOLIO: PortfolioPosition[] = [
-  { instrument: "EUR/USD", direction: "long", size: 1.0, entry_price: 1.083, pnl: 12.5 },
-  { instrument: "BTC/USD", direction: "long", size: 0.1, entry_price: 95000, pnl: 250.0 },
-  { instrument: "GOLD", direction: "short", size: 0.5, entry_price: 2860, pnl: -15.0 },
-  { instrument: "ETH/USD", direction: "long", size: 0.5, entry_price: 3200, pnl: -50.0 },
-];
+import {
+  usePipelineContext,
+  DEMO_EVENTS,
+  type StageStatus,
+} from "@/providers/PipelineProvider";
 
 export default function PipelinePage() {
-  const [stages, setStages] = useState<StageState>({
-    monitor: "idle",
-    analyst: "idle",
-    advisor: "idle",
-    sentinel: "idle",
-    content: "idle",
-  });
-  const [result, setResult] = useState<PipelineResponse | null>(null);
-  const [isRunning, setIsRunning] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<"auto" | "manual">("manual");
-
-  const resetState = useCallback(() => {
-    setStages({ monitor: "idle", analyst: "idle", advisor: "idle", sentinel: "idle", content: "idle" });
-    setResult(null);
-    setError(null);
-  }, []);
-
-  const runPipeline = useCallback(
-    async (customEvent?: CustomEvent) => {
-      resetState();
-      setIsRunning(true);
-
-      // Animate stages sequentially
-      setStages((s) => ({ ...s, monitor: "running" }));
-
-      try {
-        const response = await api.runPipeline({
-          custom_event: customEvent,
-          user_portfolio: DEMO_PORTFOLIO,
-          user_id: DEMO_USER_ID,
-        });
-
-        // Animate stage completion based on response
-        if (response.volatility_event) {
-          setStages((s) => ({ ...s, monitor: "done", analyst: "running" }));
-          await sleep(400);
-        } else {
-          setStages((s) => ({ ...s, monitor: "error" }));
-          setResult(response);
-          setIsRunning(false);
-          return;
-        }
-
-        if (response.analysis_report) {
-          setStages((s) => ({ ...s, analyst: "done", advisor: "running" }));
-          await sleep(400);
-        } else {
-          setStages((s) => ({ ...s, analyst: "error" }));
-        }
-
-        if (response.personalized_insight) {
-          setStages((s) => ({ ...s, advisor: "done", sentinel: "running" }));
-          await sleep(400);
-        } else {
-          setStages((s) => ({ ...s, advisor: "error" }));
-        }
-
-        if (response.sentinel_insight) {
-          setStages((s) => ({ ...s, sentinel: "done", content: "running" }));
-          await sleep(500);
-        } else {
-          setStages((s) => ({ ...s, sentinel: response.sentinel_insight === null ? "done" : "error", content: "running" }));
-          await sleep(300);
-        }
-
-        if (response.market_commentary) {
-          setStages((s) => ({ ...s, content: "done" }));
-        } else {
-          setStages((s) => ({ ...s, content: "error" }));
-        }
-
-        setResult(response);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Pipeline failed");
-        setStages({ monitor: "error", analyst: "error", advisor: "error", sentinel: "error", content: "error" });
-      } finally {
-        setIsRunning(false);
-      }
-    },
-    [resetState]
-  );
-
-  const runAutoScan = useCallback(async () => {
-    resetState();
-    setIsRunning(true);
-    setStages((s) => ({ ...s, monitor: "running" }));
-
-    try {
-      const response = await api.runPipeline({
-        user_portfolio: DEMO_PORTFOLIO,
-        user_id: DEMO_USER_ID,
-      });
-
-      if (response.volatility_event) {
-        setStages((s) => ({ ...s, monitor: "done", analyst: "running" }));
-        await sleep(400);
-      }
-      if (response.analysis_report) {
-        setStages((s) => ({ ...s, analyst: "done", advisor: "running" }));
-        await sleep(400);
-      }
-      if (response.personalized_insight) {
-        setStages((s) => ({ ...s, advisor: "done", sentinel: "running" }));
-        await sleep(400);
-      }
-      if (response.sentinel_insight !== undefined) {
-        setStages((s) => ({ ...s, sentinel: "done", content: "running" }));
-        await sleep(400);
-      }
-      if (response.market_commentary) {
-        setStages((s) => ({ ...s, content: "done" }));
-      }
-
-      setResult(response);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Auto scan failed");
-    } finally {
-      setIsRunning(false);
-    }
-  }, [resetState]);
+  const { stages, result, isRunning, error, mode, setMode, runPipeline, runAutoScan } =
+    usePipelineContext();
 
   return (
     <AppShell>
@@ -212,36 +66,11 @@ export default function PipelinePage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-5 gap-5">
-            <StageCard
-              title="1. MONITOR"
-              description="Detect volatility (Redis)"
-              status={stages.monitor}
-              icon="📡"
-            />
-            <StageCard
-              title="2. ANALYST"
-              description="Root cause analysis"
-              status={stages.analyst}
-              icon="🔍"
-            />
-            <StageCard
-              title="3. ADVISOR"
-              description="Portfolio interpretation"
-              status={stages.advisor}
-              icon="📊"
-            />
-            <StageCard
-              title="4. SENTINEL"
-              description="Behavior + market fusion"
-              status={stages.sentinel}
-              icon="🧠"
-            />
-            <StageCard
-              title="5. CONTENT"
-              description="Bluesky commentary"
-              status={stages.content}
-              icon="🦋"
-            />
+            <StageCard title="1. MONITOR" description="Detect volatility (Redis)" status={stages.monitor} icon="📡" />
+            <StageCard title="2. ANALYST" description="Root cause analysis" status={stages.analyst} icon="🔍" />
+            <StageCard title="3. ADVISOR" description="Portfolio interpretation" status={stages.advisor} icon="📊" />
+            <StageCard title="4. SENTINEL" description="Behavior + market fusion" status={stages.sentinel} icon="🧠" />
+            <StageCard title="5. CONTENT" description="Bluesky commentary" status={stages.content} icon="🦋" />
           </div>
 
           {/* Connector arrows (desktop only) */}
@@ -307,7 +136,16 @@ export default function PipelinePage() {
             {/* Stage 1 Result: Volatility Event */}
             {result.volatility_event && (
               <ResultCard title="VOLATILITY EVENT DETECTED" icon="📡" borderColor="border-cyan/30">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {result.volatility_event.demo_mode && (
+                  <div className="mb-4 flex items-center gap-2 bg-yellow-500/10 border border-yellow-500/30 rounded-sm px-3 py-2">
+                    <span className="text-yellow-400 text-xs">&#x26A0;</span>
+                    <span className="text-[11px] text-yellow-400 mono-data tracking-wider">
+                      DEMO MODE — No real volatility detected. Showing simulated analysis.
+                    </span>
+                  </div>
+                )}
+                {/* Multi-timeframe price row */}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                   <MiniStat label="Instrument" value={result.volatility_event.instrument} />
                   <MiniStat
                     label="Price"
@@ -318,14 +156,67 @@ export default function PipelinePage() {
                     }
                   />
                   <MiniStat
-                    label="Change"
+                    label="1h Change"
+                    value={`${Number(result.volatility_event.raw_data?.change_1h ?? 0) > 0 ? "+" : ""}${Number(result.volatility_event.raw_data?.change_1h ?? 0).toFixed(2)}%`}
+                    color={Number(result.volatility_event.raw_data?.change_1h ?? 0) > 0 ? "text-profit" : Number(result.volatility_event.raw_data?.change_1h ?? 0) < 0 ? "text-loss" : "text-white"}
+                  />
+                  <MiniStat
+                    label="24h Change"
                     value={`${result.volatility_event.price_change_pct > 0 ? "+" : ""}${result.volatility_event.price_change_pct}%`}
                     color={result.volatility_event.price_change_pct > 0 ? "text-profit" : "text-loss"}
                   />
                   <MiniStat
+                    label="7d Change"
+                    value={`${Number(result.volatility_event.raw_data?.change_7d ?? 0) > 0 ? "+" : ""}${Number(result.volatility_event.raw_data?.change_7d ?? 0).toFixed(2)}%`}
+                    color={Number(result.volatility_event.raw_data?.change_7d ?? 0) > 0 ? "text-profit" : Number(result.volatility_event.raw_data?.change_7d ?? 0) < 0 ? "text-loss" : "text-white"}
+                  />
+                </div>
+
+                {/* Market context row */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+                  <MiniStat
                     label="Magnitude"
                     value={result.volatility_event.magnitude.toUpperCase()}
-                    color={result.volatility_event.magnitude === "high" ? "text-loss" : "text-yellow-400"}
+                    color={
+                      result.volatility_event.magnitude === "high"
+                        ? "text-loss"
+                        : result.volatility_event.magnitude === "medium"
+                          ? "text-yellow-400"
+                          : "text-muted-foreground"
+                    }
+                  />
+                  <MiniStat
+                    label="ATR Ratio"
+                    value={`${Number(result.volatility_event.raw_data?.atr_ratio ?? 0).toFixed(1)}x`}
+                    color={
+                      Number(result.volatility_event.raw_data?.atr_ratio ?? 0) >= 2.0
+                        ? "text-loss"
+                        : Number(result.volatility_event.raw_data?.atr_ratio ?? 0) >= 1.0
+                          ? "text-yellow-400"
+                          : "text-muted-foreground"
+                    }
+                  />
+                  <MiniStat
+                    label="RSI(14)"
+                    value={String(Number(result.volatility_event.raw_data?.rsi_14 ?? 50).toFixed(1))}
+                    color={
+                      Number(result.volatility_event.raw_data?.rsi_14 ?? 50) < 30
+                        ? "text-profit"
+                        : Number(result.volatility_event.raw_data?.rsi_14 ?? 50) > 70
+                          ? "text-loss"
+                          : "text-white"
+                    }
+                  />
+                  <MiniStat
+                    label="Trend"
+                    value={String(result.volatility_event.raw_data?.trend ?? "neutral").toUpperCase()}
+                    color={
+                      result.volatility_event.raw_data?.trend === "bullish"
+                        ? "text-profit"
+                        : result.volatility_event.raw_data?.trend === "bearish"
+                          ? "text-loss"
+                          : "text-white"
+                    }
                   />
                 </div>
               </ResultCard>
@@ -473,21 +364,26 @@ export default function PipelinePage() {
                 </div>
 
                 {result.sentinel_insight.user_stats_snapshot && (
-                  <div className="mt-4 pt-3 border-t border-border flex flex-wrap gap-4">
-                    <MiniStat
-                      label="Total Trades"
-                      value={String(result.sentinel_insight.user_stats_snapshot?.total_trades || 0)}
-                    />
-                    <MiniStat
-                      label="Win Rate"
-                      value={`${Number(result.sentinel_insight.user_stats_snapshot?.win_rate || 0).toFixed(1)}%`}
-                      color={Number(result.sentinel_insight.user_stats_snapshot?.win_rate || 0) >= 50 ? "text-profit" : "text-loss"}
-                    />
-                    <MiniStat
-                      label="Total P&L"
-                      value={`$${Number(result.sentinel_insight.user_stats_snapshot?.total_pnl || 0).toFixed(2)}`}
-                      color={Number(result.sentinel_insight.user_stats_snapshot?.total_pnl || 0) >= 0 ? "text-profit" : "text-loss"}
-                    />
+                  <div className="mt-4 pt-3 border-t border-border">
+                    <h4 className="text-[11px] text-muted-foreground uppercase tracking-wider mb-3 mono-data">
+                      TRADING STATS (LAST {Number(result.sentinel_insight.user_stats_snapshot?.period_days ?? 30)} DAYS)
+                    </h4>
+                    <div className="flex flex-wrap gap-4">
+                      <MiniStat
+                        label="Total Trades"
+                        value={String(result.sentinel_insight.user_stats_snapshot?.total_trades || 0)}
+                      />
+                      <MiniStat
+                        label="Win Rate"
+                        value={`${Number(result.sentinel_insight.user_stats_snapshot?.win_rate || 0).toFixed(1)}%`}
+                        color={Number(result.sentinel_insight.user_stats_snapshot?.win_rate || 0) >= 50 ? "text-profit" : "text-loss"}
+                      />
+                      <MiniStat
+                        label="Total P&L"
+                        value={`$${Number(result.sentinel_insight.user_stats_snapshot?.total_pnl || 0).toFixed(2)}`}
+                        color={Number(result.sentinel_insight.user_stats_snapshot?.total_pnl || 0) >= 0 ? "text-profit" : "text-loss"}
+                      />
+                    </div>
                   </div>
                 )}
               </ResultCard>
@@ -500,6 +396,27 @@ export default function PipelinePage() {
                   label="BLUESKY POST"
                   content={result.market_commentary.post}
                 />
+
+                {/* Image Preview */}
+                {result.market_commentary.image_url && (
+                  <div className="mt-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs text-muted-foreground uppercase tracking-wider mono-data">
+                        ATTACHED IMAGE
+                      </span>
+                      {result.market_commentary.image_type && (
+                        <span className="text-[10px] text-cyan bg-cyan/10 px-2 py-0.5 rounded-sm mono-data">
+                          {result.market_commentary.image_type}
+                        </span>
+                      )}
+                    </div>
+                    <img
+                      src={result.market_commentary.image_url}
+                      alt="Market commentary image"
+                      className="w-full rounded-md border border-border object-cover max-h-96"
+                    />
+                  </div>
+                )}
 
                 <div className="flex flex-wrap gap-2 mt-4">
                   {result.market_commentary.hashtags.map((tag, i) => (
@@ -732,8 +649,4 @@ function PostPreview({
       </p>
     </div>
   );
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -5,7 +5,7 @@ import json
 import asyncio
 import websockets
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone as dt_timezone
 from decimal import Decimal
 from django.utils import timezone
 from django.conf import settings
@@ -30,17 +30,18 @@ class DerivClient:
     - Syncing trades to database
     """
     
-    def __init__(self, app_id: Optional[str] = None):
+    def __init__(self, app_id: Optional[str] = None, api_token: Optional[str] = None):
         """
         Initialize Deriv client.
-        
+
         Args:
             app_id: Deriv app ID (from https://developers.deriv.com/)
+            api_token: Per-user Deriv API token (falls back to DERIV_TOKEN env var)
         """
         self.app_id = app_id or os.environ.get('DERIV_APP_ID', '')
         if not self.app_id:
             raise ValueError("DERIV_APP_ID is required. Get it from https://developers.deriv.com/")
-        self.default_api_token = os.environ.get('DERIV_TOKEN', '')
+        self.default_api_token = api_token or os.environ.get('DERIV_TOKEN', '')
         
         # Deriv WebSocket endpoints
         self.ws_url = f"wss://ws.derivws.com/websockets/v3?app_id={self.app_id}"
@@ -221,10 +222,10 @@ class DerivClient:
         duration_seconds = None
         
         if purchase_time:
-            opened_at = datetime.fromtimestamp(purchase_time, tz=timezone.utc)
+            opened_at = datetime.fromtimestamp(purchase_time, tz=dt_timezone.utc)
         
         if sell_time:
-            closed_at = datetime.fromtimestamp(sell_time, tz=timezone.utc)
+            closed_at = datetime.fromtimestamp(sell_time, tz=dt_timezone.utc)
         
         if purchase_time and sell_time:
             duration_seconds = sell_time - purchase_time
@@ -364,12 +365,27 @@ class DerivClient:
                     errors.append(f"Missing contract_id for transaction {trade_data.get('transaction_id')}")
                     continue
                 
-                # Try to find existing trade by contract_id
-                # We'll store contract_id in a JSONField or create a unique constraint
-                existing = Trade.objects.filter(
+                # No contract_id column exists in Trade, so dedupe by a natural key
+                # derived from Deriv trade payload fields.
+                existing_qs = Trade.objects.filter(
                     user=user,
-                    # Assuming we add a contract_id field or use external_id
-                ).first()
+                    instrument=trade_data.get('instrument'),
+                    direction=trade_data.get('direction'),
+                )
+
+                opened_at = trade_data.get('opened_at')
+                if opened_at is not None:
+                    existing_qs = existing_qs.filter(opened_at=opened_at)
+
+                closed_at = trade_data.get('closed_at')
+                if closed_at is not None:
+                    existing_qs = existing_qs.filter(closed_at=closed_at)
+
+                entry_price = trade_data.get('entry_price')
+                if entry_price is not None:
+                    existing_qs = existing_qs.filter(entry_price=entry_price)
+
+                existing = existing_qs.first()
                 
                 if existing:
                     # Update existing
@@ -471,6 +487,196 @@ class DerivClient:
             finally:
                 await client.disconnect()
         return self._run_async(_fetch())
+
+    # ─── Contract Trading Methods (Demo only) ─────────────────────────
+
+    def get_contract_proposal(
+        self,
+        symbol: str = "R_100",
+        contract_type: str = "CALL",
+        amount: float = 10,
+        basis: str = "stake",
+        duration: int = 5,
+        duration_unit: str = "t",
+        api_token: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Get a contract price quote. Returns proposal_id for buying."""
+        async def _fetch():
+            client = DerivClient(self.app_id)
+            try:
+                await client.connect()
+                await client.authorize(api_token)
+                resp = await client.send_request({
+                    "proposal": 1,
+                    "amount": amount,
+                    "basis": basis,
+                    "contract_type": contract_type,
+                    "currency": "USD",
+                    "duration": duration,
+                    "duration_unit": duration_unit,
+                    "symbol": symbol,
+                })
+                proposal = resp.get("proposal", {})
+                return {
+                    "proposal_id": proposal.get("id", ""),
+                    "ask_price": float(proposal.get("ask_price", 0)),
+                    "payout": float(proposal.get("payout", 0)),
+                    "spot": float(proposal.get("spot", 0)),
+                    "spot_time": proposal.get("spot_time"),
+                    "date_expiry": proposal.get("date_expiry"),
+                    "longcode": proposal.get("longcode", ""),
+                    "display_value": proposal.get("display_value", ""),
+                    "contract_type": contract_type,
+                    "symbol": symbol,
+                }
+            finally:
+                await client.disconnect()
+        return self._run_async(_fetch())
+
+    def buy_contract(
+        self,
+        proposal_id: str,
+        price: float,
+        api_token: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Buy a contract using a proposal id."""
+        async def _fetch():
+            client = DerivClient(self.app_id)
+            try:
+                await client.connect()
+                await client.authorize(api_token)
+                resp = await client.send_request({
+                    "buy": proposal_id,
+                    "price": price,
+                })
+                buy_data = resp.get("buy", {})
+                return {
+                    "contract_id": buy_data.get("contract_id"),
+                    "buy_price": float(buy_data.get("buy_price", 0)),
+                    "balance_after": float(buy_data.get("balance_after", 0)),
+                    "longcode": buy_data.get("longcode", ""),
+                    "start_time": buy_data.get("start_time"),
+                    "transaction_id": buy_data.get("transaction_id"),
+                }
+            finally:
+                await client.disconnect()
+        return self._run_async(_fetch())
+
+    def quote_and_buy(
+        self,
+        symbol: str = "R_100",
+        contract_type: str = "CALL",
+        amount: float = 10,
+        basis: str = "stake",
+        duration: int = 5,
+        duration_unit: str = "t",
+        api_token: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Get a proposal and immediately buy it in the SAME WebSocket session."""
+        async def _fetch():
+            client = DerivClient(self.app_id)
+            try:
+                await client.connect()
+                await client.authorize(api_token)
+                # Step 1: get proposal
+                resp = await client.send_request({
+                    "proposal": 1,
+                    "amount": amount,
+                    "basis": basis,
+                    "contract_type": contract_type,
+                    "currency": "USD",
+                    "duration": duration,
+                    "duration_unit": duration_unit,
+                    "symbol": symbol,
+                })
+                proposal = resp.get("proposal", {})
+                proposal_id = proposal.get("id", "")
+                ask_price = float(proposal.get("ask_price", 0))
+
+                if not proposal_id:
+                    return {"error": "Failed to get proposal ID from Deriv API"}
+
+                # Step 2: buy immediately on the same connection
+                buy_resp = await client.send_request({
+                    "buy": proposal_id,
+                    "price": ask_price,
+                })
+                buy_data = buy_resp.get("buy", {})
+                return {
+                    "contract_id": buy_data.get("contract_id"),
+                    "buy_price": float(buy_data.get("buy_price", 0)),
+                    "balance_after": float(buy_data.get("balance_after", 0)),
+                    "longcode": buy_data.get("longcode", ""),
+                    "start_time": buy_data.get("start_time"),
+                    "transaction_id": buy_data.get("transaction_id"),
+                    "payout": float(proposal.get("payout", 0)),
+                    "spot": float(proposal.get("spot", 0)),
+                    "contract_type": contract_type,
+                    "symbol": symbol,
+                }
+            finally:
+                await client.disconnect()
+        return self._run_async(_fetch())
+
+    def sell_contract(
+        self,
+        contract_id: int,
+        price: float = 0,
+        api_token: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Sell/close an open contract. price=0 means market price."""
+        async def _fetch():
+            client = DerivClient(self.app_id)
+            try:
+                await client.connect()
+                await client.authorize(api_token)
+                resp = await client.send_request({
+                    "sell": contract_id,
+                    "price": price,
+                })
+                sell_data = resp.get("sell", {})
+                return {
+                    "contract_id": contract_id,
+                    "sold_for": float(sell_data.get("sold_for", 0)),
+                    "balance_after": float(sell_data.get("balance_after", 0)),
+                    "transaction_id": sell_data.get("transaction_id"),
+                }
+            finally:
+                await client.disconnect()
+        return self._run_async(_fetch())
+
+    def get_open_contracts(
+        self, api_token: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Get all currently open (unsettled) contracts."""
+        async def _fetch():
+            client = DerivClient(self.app_id)
+            try:
+                await client.connect()
+                await client.authorize(api_token)
+                resp = await client.send_request({"proposal_open_contract": 1})
+                contracts = resp.get("proposal_open_contract", {}).get("open_contracts", [])
+                result = []
+                for c in contracts:
+                    result.append({
+                        "contract_id": c.get("contract_id"),
+                        "contract_type": c.get("contract_type", ""),
+                        "symbol": c.get("underlying", ""),
+                        "buy_price": float(c.get("buy_price", 0)),
+                        "current_spot": float(c.get("current_spot", 0)),
+                        "profit": float(c.get("profit", 0)),
+                        "payout": float(c.get("payout", 0)),
+                        "is_valid_to_sell": c.get("is_valid_to_sell", 0) == 1,
+                        "is_expired": c.get("is_expired", 0) == 1,
+                        "longcode": c.get("longcode", ""),
+                        "date_expiry": c.get("date_expiry"),
+                    })
+                return result
+            finally:
+                await client.disconnect()
+        return self._run_async(_fetch())
+
+    # ─── Active Symbols ──────────────────────────────────────────────
 
     def fetch_active_symbols(self) -> List[Dict[str, Any]]:
         """Fetch all available trading instruments (no auth required)."""

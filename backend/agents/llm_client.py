@@ -1,18 +1,21 @@
 """
 Unified DeepSeek LLM Client for TradeIQ
 Uses DeepSeek-V3 with function calling support.
-Falls back to OpenRouter if DeepSeek API has insufficient balance.
+Falls back to OpenRouter if DeepSeek direct API fails.
 """
 import os
-from typing import List, Dict, Any, Optional
+import logging
+from typing import List, Dict, Any, Optional, Generator
 from openai import OpenAI
+
+logger = logging.getLogger("tradeiq.llm")
 
 
 class DeepSeekClient:
     """Unified DeepSeek client for all AI agents, with OpenRouter fallback"""
 
     def __init__(self):
-        # Try DeepSeek direct first, fallback to OpenRouter
+        # Try DeepSeek direct first, OpenRouter as fallback
         deepseek_key = os.environ.get("DEEPSEEK_API_KEY", "")
         openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
 
@@ -21,16 +24,8 @@ class DeepSeekClient:
                 "Neither DEEPSEEK_API_KEY nor OPENROUTER_API_KEY set in environment"
             )
 
-        # Try OpenRouter first (since DeepSeek balance is depleted)
-        if openrouter_key:
-            self.client = OpenAI(
-                api_key=openrouter_key,
-                base_url="https://openrouter.ai/api/v1",
-            )
-            self.chat_model = "deepseek/deepseek-chat-v3-0324"
-            self.reasoner_model = "deepseek/deepseek-chat-v3-0324"
-            self._provider = "openrouter"
-        else:
+        # Try DeepSeek direct first (OpenRouter balance is depleted)
+        if deepseek_key:
             self.client = OpenAI(
                 api_key=deepseek_key,
                 base_url="https://api.deepseek.com",
@@ -38,17 +33,25 @@ class DeepSeekClient:
             self.chat_model = "deepseek-chat"
             self.reasoner_model = "deepseek-chat"
             self._provider = "deepseek"
+        else:
+            self.client = OpenAI(
+                api_key=openrouter_key,
+                base_url="https://openrouter.ai/api/v1",
+            )
+            self.chat_model = "deepseek/deepseek-chat-v3-0324"
+            self.reasoner_model = "deepseek/deepseek-chat-v3-0324"
+            self._provider = "openrouter"
 
         # Fallback client (if primary fails)
         self._fallback_client = None
         self._fallback_model = None
         if deepseek_key and openrouter_key:
-            # Primary is OpenRouter, fallback is DeepSeek direct
+            # Primary is DeepSeek direct, fallback is OpenRouter
             self._fallback_client = OpenAI(
-                api_key=deepseek_key,
-                base_url="https://api.deepseek.com",
+                api_key=openrouter_key,
+                base_url="https://openrouter.ai/api/v1",
             )
-            self._fallback_model = "deepseek-chat"
+            self._fallback_model = "deepseek/deepseek-chat-v3-0324"
 
     def chat(
         self,
@@ -142,6 +145,40 @@ class DeepSeekClient:
         )
 
         return response.choices[0].message.content
+
+    def stream_chat(
+        self,
+        system_prompt: str,
+        user_message: str,
+        max_tokens: int = 1000,
+        temperature: float = 0.7,
+    ) -> Generator[str, None, None]:
+        """
+        Stream LLM response chunk by chunk.
+        Yields text fragments as they arrive.
+        """
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ]
+
+        params: Dict[str, Any] = {
+            "model": self.chat_model,
+            "messages": messages,
+            "temperature": temperature,
+            "stream": True,
+        }
+        if max_tokens:
+            params["max_tokens"] = max_tokens
+
+        try:
+            response = self.client.chat.completions.create(**params)
+            for chunk in response:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        except Exception as exc:
+            logger.error("Stream error: %s", exc)
+            yield f"[Error: {exc}]"
 
 
 # Global singleton instance

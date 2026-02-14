@@ -19,6 +19,21 @@ from .agent_team import (
     AnalysisReport,
     BehavioralSentinelInsight,
 )
+from copytrading.tools import (
+    get_top_traders,
+    get_trader_stats,
+    recommend_trader,
+    start_copy_trade,
+    stop_copy_trade,
+)
+from trading.tools import (
+    get_contract_quote,
+    execute_demo_trade,
+    quote_and_buy,
+    close_position,
+    get_positions,
+)
+from deriv_auth.middleware import get_deriv_token, has_real_deriv_account
 from dataclasses import asdict
 import json
 
@@ -88,6 +103,10 @@ class AgentChatView(APIView):
                 agent_type = "behavior"
             elif any(w in msg_lower for w in ["post", "bluesky", "content", "thread", "persona", "publish", "social"]):
                 agent_type = "content"
+            elif any(w in msg_lower for w in ["copy", "copier", "trader to follow", "mirror", "top trader", "copy trad"]):
+                agent_type = "copytrading"
+            elif any(w in msg_lower for w in ["trade", "contract", "buy", "sell", "position", "quote", "call", "put", "stake"]):
+                agent_type = "trading"
             else:
                 agent_type = "market"
 
@@ -321,3 +340,136 @@ class AgentContentView(APIView):
                 {"error": str(exc)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class AgentCopyTradingView(APIView):
+    """
+    POST /api/agents/copytrading/
+    {
+        "action": "list" | "stats" | "recommend" | "start" | "stop",
+        "trader_id": "...",
+        "user_id": "...",
+        "limit": 10
+    }
+
+    Token is resolved from the authenticated user's Deriv account,
+    falling back to the env DERIV_TOKEN for unauthenticated/demo users.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        action = request.data.get("action", "list")
+        trader_id = request.data.get("trader_id")
+        user_id = request.data.get("user_id")
+        limit = request.data.get("limit", 10)
+
+        # Resolve token from user's linked Deriv account (with env fallback)
+        api_token = get_deriv_token(request)
+        is_real = has_real_deriv_account(request)
+
+        try:
+            if action == "list":
+                result = get_top_traders(limit=limit, api_token=api_token)
+                result["is_demo"] = not is_real
+            elif action == "stats":
+                if not trader_id:
+                    return Response({"error": "trader_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+                result = get_trader_stats(trader_id, api_token=api_token)
+                result["is_demo"] = not is_real
+            elif action == "recommend":
+                if not user_id:
+                    return Response({"error": "user_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+                result = recommend_trader(user_id, api_token=api_token)
+                result["is_demo"] = not is_real
+            elif action == "start":
+                if not trader_id:
+                    return Response({"error": "trader_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+                if not api_token:
+                    return Response({"error": "No Deriv account connected. Please connect your account first."}, status=status.HTTP_400_BAD_REQUEST)
+                result = start_copy_trade(trader_id, api_token=api_token)
+                result["is_demo"] = not is_real
+            elif action == "stop":
+                if not trader_id:
+                    return Response({"error": "trader_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+                if not api_token:
+                    return Response({"error": "No Deriv account connected. Please connect your account first."}, status=status.HTTP_400_BAD_REQUEST)
+                result = stop_copy_trade(trader_id, api_token=api_token)
+                result["is_demo"] = not is_real
+            else:
+                return Response({"error": f"Unknown action: {action}"}, status=status.HTTP_400_BAD_REQUEST)
+
+            return Response(result)
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AgentTradingView(APIView):
+    """
+    POST /api/agents/trading/
+    {
+        "action": "quote" | "buy" | "sell" | "positions",
+        "instrument": "...",
+        "contract_type": "CALL",
+        "amount": 10,
+        "duration": 5,
+        "duration_unit": "t",
+        "proposal_id": "...",
+        "price": 10.5,
+        "contract_id": 123
+    }
+
+    Token is resolved from the authenticated user's Deriv account,
+    falling back to the env DERIV_TOKEN for unauthenticated/demo users.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        action = request.data.get("action", "quote")
+
+        # Resolve token from user's linked Deriv account (with env fallback)
+        api_token = get_deriv_token(request)
+        is_real = has_real_deriv_account(request)
+
+        try:
+            if action == "quote":
+                instrument = request.data.get("instrument")
+                if not instrument:
+                    return Response({"error": "instrument is required"}, status=status.HTTP_400_BAD_REQUEST)
+                result = get_contract_quote(
+                    instrument=instrument,
+                    contract_type=request.data.get("contract_type", "CALL"),
+                    amount=request.data.get("amount", 10),
+                    duration=request.data.get("duration", 5),
+                    duration_unit=request.data.get("duration_unit", "t"),
+                    api_token=api_token,
+                )
+            elif action == "buy":
+                # Use quote_and_buy to avoid InvalidContractProposal from expired proposals
+                instrument = request.data.get("instrument")
+                if not instrument:
+                    return Response({"error": "instrument is required for buy"}, status=status.HTTP_400_BAD_REQUEST)
+                result = quote_and_buy(
+                    instrument=instrument,
+                    contract_type=request.data.get("contract_type", "CALL"),
+                    amount=request.data.get("amount", 10),
+                    duration=request.data.get("duration", 5),
+                    duration_unit=request.data.get("duration_unit", "t"),
+                    api_token=api_token,
+                )
+            elif action == "sell":
+                contract_id = request.data.get("contract_id")
+                if contract_id is None:
+                    return Response({"error": "contract_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+                result = close_position(contract_id, api_token=api_token)
+            elif action == "positions":
+                result = get_positions(api_token=api_token)
+            else:
+                return Response({"error": f"Unknown action: {action}"}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Add account mode indicator to all responses
+            if isinstance(result, dict):
+                result["is_demo"] = not is_real
+
+            return Response(result)
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

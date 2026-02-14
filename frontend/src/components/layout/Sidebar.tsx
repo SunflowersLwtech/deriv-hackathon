@@ -109,7 +109,7 @@ function ActivityFeed() {
   const activities = [
     {
       type: "market" as const,
-      message: "EUR/USD showing bearish divergence on RSI",
+      message: "BTC/USD showing bearish divergence on RSI",
       time: "2m ago",
     },
     {
@@ -119,12 +119,12 @@ function ActivityFeed() {
     },
     {
       type: "content" as const,
-      message: "New Bluesky post drafted: 'Market Update: EUR/USD...'",
+      message: "New Bluesky post drafted: 'Market Update: BTC/USD...'",
       time: "12m ago",
     },
     {
       type: "market" as const,
-      message: "BTC/USD crossed above 50-day SMA",
+      message: "ETH/USD crossed above 50-day SMA",
       time: "18m ago",
     },
     {
