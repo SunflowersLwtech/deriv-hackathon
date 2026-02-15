@@ -102,7 +102,11 @@ export function useDashboardMetrics() {
     });
     const todayPnl = todayTrades.reduce((acc, t) => acc + parseFloat(String(t.pnl || 0)), 0);
 
-    const initialBalance = Number(profiles[0]?.preferences?.initial_balance ?? 0);
+    // Use user-configured initial balance, or default to 10,000 (demo starting equity)
+    const DEFAULT_STARTING_BALANCE = 10_000;
+    const initialBalance = Number(
+      profiles[0]?.preferences?.initial_balance ?? DEFAULT_STARTING_BALANCE
+    );
     const portfolioValue = initialBalance + totalPnl;
     const todayPnlPercent = initialBalance > 0 ? (todayPnl / initialBalance) * 100 : 0;
 

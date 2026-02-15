@@ -5,9 +5,15 @@ Supports: streaming responses, market alert push, narrator push.
 """
 import json
 import asyncio
+import logging
 from urllib.parse import parse_qs
 from channels.generic.websocket import AsyncWebsocketConsumer
 from asgiref.sync import sync_to_async
+
+logger = logging.getLogger(__name__)
+
+# Maximum time (seconds) to wait for the LLM router before giving up.
+_ROUTE_TIMEOUT = 90
 
 
 class ChatConsumer(AsyncWebsocketConsumer):
@@ -19,6 +25,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         self.user_id = requested_user_id or self.DEMO_USER_ID
         fallback_group_id = self.channel_name.replace(".", "_").replace("!", "_")
         self.room_group_name = f"chat_user_{requested_user_id or fallback_group_id}"
+        self._active_task: asyncio.Task | None = None
 
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         # Join global market alerts group
@@ -33,6 +40,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
         }))
 
     async def disconnect(self, close_code):
+        # Cancel any in-progress LLM task so the consumer can shut down quickly
+        if self._active_task and not self._active_task.done():
+            self._active_task.cancel()
         await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
         await self.channel_layer.group_discard("market_alerts", self.channel_name)
 
@@ -47,7 +57,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return
 
         if use_stream:
+            # Track as active task so disconnect() can cancel it
+            self._active_task = asyncio.current_task()
             await self._stream_response(message, agent_type, user_id)
+            self._active_task = None
         else:
             # Legacy non-streaming path
             await self.send(text_data=json.dumps({
@@ -76,8 +89,23 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         try:
             # Phase 2: route query (tool calls happen here, synchronously)
-            result = await sync_to_async(self._route_message)(user_message, resolved_type, user_id)
+            # Wrap in wait_for so a slow LLM / tool call doesn't hang the
+            # consumer long enough for Daphne to kill it.
+            result = await asyncio.wait_for(
+                sync_to_async(self._route_message)(user_message, resolved_type, user_id),
+                timeout=_ROUTE_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Chat route_query timed out after %ss for user %s", _ROUTE_TIMEOUT, user_id)
+            await self.send(text_data=json.dumps({
+                "type": "stream_done",
+                "full_content": "Sorry, the analysis is taking too long. Please try a simpler question or try again later.",
+                "agent_type": resolved_type,
+                "tools_used": [],
+            }))
+            return
         except Exception as exc:
+            logger.exception("Chat route_query error for user %s", user_id)
             # Send error as stream_done so the frontend resets properly
             await self.send(text_data=json.dumps({
                 "type": "stream_done",

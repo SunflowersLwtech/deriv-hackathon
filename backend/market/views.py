@@ -1,3 +1,5 @@
+import logging
+
 from rest_framework import viewsets
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -16,6 +18,8 @@ from .tools import (
 from agents.router import route_market_query
 from django.utils import timezone as dj_tz
 from datetime import timedelta
+
+logger = logging.getLogger(__name__)
 
 
 class MarketInsightViewSet(viewsets.ReadOnlyModelViewSet):
@@ -84,8 +88,19 @@ class MarketBriefView(APIView):
 
     def post(self, request):
         instruments = request.data.get("instruments")
-        brief = generate_market_brief(instruments)
-        return Response(brief)
+        try:
+            brief = generate_market_brief(instruments)
+            return Response(brief)
+        except Exception as e:
+            logger.exception("MarketBriefView error")
+            return Response(
+                {
+                    "summary": f"Market brief temporarily unavailable: {e}",
+                    "instruments": instruments or [],
+                    "error": True,
+                },
+                status=200,  # 200 with error flag so frontend degrades gracefully
+            )
 
 
 class LivePriceView(APIView):
@@ -102,8 +117,12 @@ class LivePriceView(APIView):
         if not instrument:
             return Response({"error": "instrument is required"}, status=400)
 
-        price_data = fetch_price_data(instrument)
-        return Response(price_data)
+        try:
+            price_data = fetch_price_data(instrument)
+            return Response(price_data)
+        except Exception as e:
+            logger.exception("LivePriceView error for %s", instrument)
+            return Response({"error": str(e), "instrument": instrument}, status=500)
 
 
 class PriceHistoryView(APIView):
@@ -121,7 +140,11 @@ class PriceHistoryView(APIView):
         if not instrument:
             return Response({"error": "instrument is required"}, status=400)
 
-        return Response(fetch_price_history(instrument=instrument, timeframe=timeframe, count=count))
+        try:
+            return Response(fetch_price_history(instrument=instrument, timeframe=timeframe, count=count))
+        except Exception as e:
+            logger.exception("PriceHistoryView error for %s", instrument)
+            return Response({"error": str(e), "instrument": instrument}, status=500)
 
 
 class MarketTechnicalsView(APIView):
@@ -150,7 +173,11 @@ class MarketSentimentView(APIView):
         instrument = request.data.get("instrument", "")
         if not instrument:
             return Response({"error": "instrument is required"}, status=400)
-        return Response(get_sentiment(instrument))
+        try:
+            return Response(get_sentiment(instrument))
+        except Exception as e:
+            logger.exception("MarketSentimentView error for %s", instrument)
+            return Response({"error": str(e), "instrument": instrument}, status=500)
 
 
 class EconomicCalendarView(APIView):
