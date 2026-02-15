@@ -60,6 +60,9 @@ const DEMO_FALLBACK_POOL = [
     impact: "Your BTC/USD long position benefits from this spike. Unrealised P&L improved by ~$250. Consider scaling out partial profits at resistance.",
     commentary: "BTC surged past $97K as ETF inflows surged and shorts got liquidated. Momentum is strong but resistance at $100K looms large. Stay disciplined.",
     insight: "Historically, 5%+ daily BTC moves see a 60% retracement within 48h. Consider protecting profits with a trailing stop.",
+    sentinelWarning: "Your trading history shows a tendency to add to winning positions during spikes. While BTC looks strong, 5%+ moves often retrace 60% within 48h.",
+    sentinelContext: "Based on your last 30 days, you show a bias toward momentum chasing during volatile periods. This can lead to overexposure at local tops.",
+    sentinelPattern: "In similar BTC spike events (>5% daily), your past trades show a 40% win rate when entering immediately vs. 65% when waiting for confirmation.",
   },
   {
     instrument: "ETH/USD",
@@ -76,6 +79,9 @@ const DEMO_FALLBACK_POOL = [
     impact: "Your ETH/USD long position is under pressure. Unrealised P&L dropped by ~$50. Monitor the $3,000 support level closely.",
     commentary: "ETH dropped below $3,100 as whale selling and DeFi liquidations compounded. The ETH/BTC ratio continues to weaken. Key support at $3,000.",
     insight: "When ETH drops >4% while BTC rises, the divergence typically resolves within a week. Avoid adding to ETH longs until BTC stabilises.",
+    sentinelWarning: "You tend to average down on losing positions. ETH is under pressure from whale activity. Averaging down here increases risk of larger drawdown.",
+    sentinelContext: "Your last 30 days show 3 instances of adding to losers, resulting in 2 larger losses. The instinct to 'buy the dip' can be costly during structural selling.",
+    sentinelPattern: "When ETH drops >4% while BTC rises, traders who averaged down had a 35% win rate vs. 58% for those who waited for stabilization.",
   },
   {
     instrument: "Volatility 75",
@@ -92,6 +98,9 @@ const DEMO_FALLBACK_POOL = [
     impact: "Your V75 long position gained ~$120. Synthetic indices are independent of macro events, so position sizing remains the key risk factor.",
     commentary: "V75 saw a 2.3% spike driven by algorithmic expansion. Synthetic indices follow statistical patterns — watch for mean-reversion signals.",
     insight: "V75 spikes of this magnitude typically revert within 2-4 hours. Consider tightening stops rather than adding to winners.",
+    sentinelWarning: "You frequently hold V75 positions through volatile spikes without adjusting stops. This pattern has led to 3 unnecessary stop-outs in the last month.",
+    sentinelContext: "Your synthetic index trading shows good entry timing but poor exit discipline. 60% of your V75 losses came from not tightening stops during spikes.",
+    sentinelPattern: "V75 spikes of this magnitude historically revert within 2-4 hours. Traders who tighten stops see 25% fewer drawdowns on winning trades.",
   },
 ];
 
@@ -152,7 +161,21 @@ function generateDemoFallback(customEvent?: CustomEvent): PipelineResponse {
       ],
       generated_at: now,
     },
-    sentinel_insight: null,
+    sentinel_insight: {
+      instrument: customEvent?.instrument ?? demo.instrument,
+      market_event_summary: `${demo.instrument} ${changePct > 0 ? "spike" : "drop"} of ${Math.abs(changePct).toFixed(1)}%`,
+      behavioral_context: demo.sentinelContext,
+      risk_level: Math.abs(changePct) >= 3 ? "high" as const : "medium" as const,
+      personalized_warning: demo.sentinelWarning,
+      historical_pattern_match: demo.sentinelPattern,
+      user_stats_snapshot: {
+        total_trades: 47,
+        win_rate: 52.3,
+        total_pnl: 185.50,
+        period_days: 30,
+      },
+      generated_at: now,
+    },
     market_commentary: {
       post: demo.commentary,
       hashtags: ["#TradeIQ", "#MarketAlert", `#${(customEvent?.instrument ?? demo.instrument).replace(/[/ ]/g, "")}`],
