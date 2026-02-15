@@ -18,7 +18,6 @@ from .tools import (
     analyze_trade_patterns,
     generate_behavioral_nudge_with_ai,
     get_trading_statistics,
-    save_behavioral_metric
 )
 from rest_framework.permissions import AllowAny
 from tradeiq.permissions import IsAuthenticatedOrReadOnly
@@ -101,10 +100,12 @@ class TradeViewSet(viewsets.ModelViewSet):
     def _analyze_and_nudge(self, user):
         """
         Internal method to analyze patterns and send nudge via WebSocket.
+        Metric saving is handled by the post_save signal in signals.py
+        which includes the full dataset (win_count, loss_count, avg_hold_time).
         """
         # Analyze recent trades (last 24 hours)
         analysis = analyze_trade_patterns(str(user.id), hours=24)
-        
+
         if analysis['needs_nudge']:
             # Generate AI-powered nudge
             nudge = generate_behavioral_nudge_with_ai(str(user.id), analysis)
@@ -126,46 +127,6 @@ class TradeViewSet(viewsets.ModelViewSet):
                     }
                 }
             )
-
-            # Also save to daily metrics
-            today = timezone.now().date()
-            pattern_flags = {
-                k: v['detected'] 
-                for k, v in analysis['patterns'].items() 
-                if isinstance(v, dict) and 'detected' in v
-            }
-            
-            # Calculate emotional state based on patterns
-            if analysis['patterns']['highest_severity'] == 'high':
-                emotional_state = 'distressed'
-            elif analysis['patterns']['highest_severity'] == 'medium':
-                emotional_state = 'anxious'
-            elif analysis['patterns']['has_any_pattern']:
-                emotional_state = 'cautious'
-            else:
-                emotional_state = 'calm'
-            
-            metric_data = {
-                'total_trades': analysis['trade_count'],
-                'pattern_flags': pattern_flags,
-                'emotional_state': emotional_state,
-                'risk_score': self._calculate_risk_score(analysis['patterns'])
-            }
-            
-            save_behavioral_metric(str(user.id), today, metric_data)
-    
-    def _calculate_risk_score(self, patterns):
-        """Calculate risk score (0-100) based on detected patterns."""
-        score = 0
-        
-        severity_weights = {'high': 30, 'medium': 20, 'low': 10}
-        
-        for pattern_name, pattern_data in patterns.items():
-            if isinstance(pattern_data, dict) and pattern_data.get('detected'):
-                severity = pattern_data.get('severity', 'none')
-                score += severity_weights.get(severity, 0)
-        
-        return min(score, 100)
     
     @action(detail=False, methods=['post'])
     def analyze_batch(self, request):

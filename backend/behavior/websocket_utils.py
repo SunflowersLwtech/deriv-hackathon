@@ -35,9 +35,9 @@ def send_behavioral_nudge(user_id: str, nudge_data: Dict[str, Any]) -> bool:
             "user_id": user_id
         }
         
-        # Send to the chat group
+        # Send to the user-specific chat group (matches views.py pattern)
         async_to_sync(channel_layer.group_send)(
-            "chat",
+            f"chat_user_{user_id}",
             {
                 "type": "chat_message",
                 "message": message
@@ -128,15 +128,15 @@ def send_trading_summary(user_id: str, stats: Dict[str, Any]) -> bool:
         }
         
         async_to_sync(channel_layer.group_send)(
-            "chat",
+            f"chat_user_{user_id}",
             {
                 "type": "chat_message",
                 "message": message
             }
         )
-        
+
         return True
-        
+
     except Exception as e:
         logger.warning("Error sending trading summary: %s", e)
         return False

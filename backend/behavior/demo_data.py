@@ -21,32 +21,33 @@ def load_demo_scenario(user_email='demo@tradeiq.com', scenario='revenge_trading'
     scenarios = {
         'revenge_trading': [
             # Initial loss triggers emotional trading
-            {'time': 0, 'pnl': -200, 'instrument': 'BTC/USD'},
+            {'time': 0, 'pnl': -200, 'instrument': 'BTC/USD', 'direction': 'LONG'},
             # Rapid trades in next 10 minutes
-            {'time': 2, 'pnl': -150, 'instrument': 'BTC/USD'},
-            {'time': 4, 'pnl': -180, 'instrument': 'BTC/USD'},
-            {'time': 6, 'pnl': -120, 'instrument': 'BTC/USD'},
-            {'time': 7, 'pnl': -100, 'instrument': 'BTC/USD'},
+            {'time': 2, 'pnl': -150, 'instrument': 'BTC/USD', 'direction': 'SHORT'},
+            {'time': 4, 'pnl': -180, 'instrument': 'BTC/USD', 'direction': 'LONG'},
+            {'time': 6, 'pnl': -120, 'instrument': 'BTC/USD', 'direction': 'SHORT'},
+            {'time': 7, 'pnl': -100, 'instrument': 'BTC/USD', 'direction': 'LONG'},
         ],
         'overtrading': [
             # 25 trades in a day (way above 8 average)
-            {'time': i*15, 'pnl': (-1)**(i%3) * 50, 'instrument': 'Volatility 75'}
+            {'time': i*15, 'pnl': (-1)**(i%3) * 50, 'instrument': 'Volatility 75',
+             'direction': 'LONG' if i % 2 == 0 else 'SHORT'}
             for i in range(25)
         ],
         'loss_chasing': [
             # Consecutive losses with increasing position sizes
-            {'time': 0, 'pnl': -100, 'instrument': 'BTC/USD'},
-            {'time': 15, 'pnl': -150, 'instrument': 'BTC/USD'},
-            {'time': 30, 'pnl': -250, 'instrument': 'BTC/USD'},
-            {'time': 45, 'pnl': -350, 'instrument': 'BTC/USD'},
+            {'time': 0, 'pnl': -100, 'instrument': 'BTC/USD', 'direction': 'LONG'},
+            {'time': 15, 'pnl': -150, 'instrument': 'BTC/USD', 'direction': 'LONG'},
+            {'time': 30, 'pnl': -250, 'instrument': 'BTC/USD', 'direction': 'LONG'},
+            {'time': 45, 'pnl': -350, 'instrument': 'BTC/USD', 'direction': 'LONG'},
         ],
         'healthy_session': [
             # Well-paced trades with good discipline
-            {'time': 0, 'pnl': 85, 'instrument': 'BTC/USD'},
-            {'time': 60, 'pnl': -40, 'instrument': 'ETH/USD'},
-            {'time': 150, 'pnl': 120, 'instrument': 'Volatility 75'},
-            {'time': 240, 'pnl': 60, 'instrument': 'ETH/USD'},
-            {'time': 300, 'pnl': -30, 'instrument': 'BTC/USD'},
+            {'time': 0, 'pnl': 85, 'instrument': 'BTC/USD', 'direction': 'LONG'},
+            {'time': 60, 'pnl': -40, 'instrument': 'ETH/USD', 'direction': 'SHORT'},
+            {'time': 150, 'pnl': 120, 'instrument': 'Volatility 75', 'direction': 'LONG'},
+            {'time': 240, 'pnl': 60, 'instrument': 'ETH/USD', 'direction': 'LONG'},
+            {'time': 300, 'pnl': -30, 'instrument': 'BTC/USD', 'direction': 'SHORT'},
         ]
     }
     
@@ -57,6 +58,7 @@ def load_demo_scenario(user_email='demo@tradeiq.com', scenario='revenge_trading'
         Trade.objects.create(
             user=user,
             instrument=trade_data['instrument'],
+            direction=trade_data.get('direction', ''),
             pnl=Decimal(str(trade_data['pnl'])),
             opened_at=now - timedelta(minutes=trade_data['time']),
             closed_at=now - timedelta(minutes=trade_data['time']) + timedelta(minutes=5),

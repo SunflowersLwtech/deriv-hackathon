@@ -56,9 +56,9 @@ async function getPrimaryUserId(): Promise<string | null> {
 }
 
 function severityToCard(severity: string): BehaviorPattern["severity"] {
-  if (severity === "high") return "critical";
-  if (severity === "medium") return "high";
-  if (severity === "low") return "medium";
+  if (severity === "critical") return "critical";
+  if (severity === "high") return "high";
+  if (severity === "medium") return "medium";
   return "low";
 }
 
@@ -77,7 +77,7 @@ export function useTrades() {
         id: trade.id,
         time: opened.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }),
         instrument: trade.instrument,
-        direction: trade.direction?.toUpperCase() === "SELL" ? "SELL" : "BUY",
+        direction: ["SELL", "SHORT"].includes(trade.direction?.toUpperCase()) ? "SELL" : "BUY",
         amount: `$${notional.toFixed(2)}`,
         pnl: `${pnlNum >= 0 ? "+" : ""}$${pnlNum.toFixed(2)}`,
         pnlValue: pnlNum,
@@ -181,7 +181,7 @@ export function useSessionStats() {
         : `${(avgDuration / 3600).toFixed(1)}h`;
 
     const highestSeverity = batch.analysis?.patterns?.highest_severity || "none";
-    const riskMap = { none: 0, low: 25, medium: 55, high: 85 } as const;
+    const riskMap = { none: 0, low: 25, medium: 55, high: 85, critical: 100 } as const;
     const riskScore = riskMap[highestSeverity as keyof typeof riskMap] ?? 0;
 
     const riskLevel: SessionStats["riskLevel"] =
