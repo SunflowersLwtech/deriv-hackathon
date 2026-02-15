@@ -412,12 +412,16 @@ class TradingTwinView(APIView):
     """
     POST /api/behavior/trading-twin/
     Generate user's Trading Twin analysis.
+
+    Supports caching: subsequent requests within 10 minutes return cached
+    results instantly (no LLM call). Pass force_refresh=true to regenerate.
     """
     permission_classes = [AllowAny]
 
     def post(self, request):
         from behavior.trading_twin import generate_trading_twin
         from deriv_auth.middleware import has_real_deriv_account
+        from demo.fallback import execute_with_fallback
 
         # Prefer authenticated user's profile ID
         req_user = getattr(request, "user", None)
@@ -427,14 +431,26 @@ class TradingTwinView(APIView):
             user_id = request.data.get("user_id", DEMO_USER_ID)
         days = int(request.data.get("days", 30))
         starting_equity = float(request.data.get("starting_equity", 10000))
+        force_refresh = request.data.get("force_refresh", False)
 
         # Prefer real data when user has a connected Deriv account
         prefer_real = has_real_deriv_account(request) or Trade.objects.filter(
             user_id=user_id, is_mock=False
         ).exists()
 
-        result = generate_trading_twin(user_id, days, starting_equity, prefer_real=prefer_real)
-        return Response(asdict(result))
+        # Use execute_with_fallback so demo cache also works as safety net
+        cache_key = f"trading_twin:{user_id}:{days}"
+        result = execute_with_fallback(
+            cache_key,
+            generate_trading_twin,
+            user_id, days, starting_equity,
+            prefer_real=prefer_real,
+            force_refresh=force_refresh,
+        )
+
+        data = asdict(result) if hasattr(result, "__dataclass_fields__") else result
+        data["cached"] = not force_refresh and data.get("generated_at", "") != ""
+        return Response(data)
 
 
 class DerivPortfolioView(APIView):

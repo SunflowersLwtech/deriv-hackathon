@@ -16,9 +16,67 @@ from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta
 from django.utils import timezone
+import time
 import logging
 
 logger = logging.getLogger("tradeiq.twin")
+
+# ─── In-Memory Cache ─────────────────────────────────────────────────
+# Same pattern as demo/fallback.py: in-memory dict with TTL tracking.
+# Avoids repeated LLM calls for the same user+params within the TTL window.
+
+CACHE_TTL_SECONDS = 600  # 10 minutes
+
+_twin_cache: Dict[str, Any] = {}       # key → TwinResult
+_twin_cache_ts: Dict[str, float] = {}  # key → timestamp (time.time())
+
+
+def _cache_key(user_id: str, days: int, starting_equity: float) -> str:
+    """Build a cache key for a Trading Twin request."""
+    return f"twin:{user_id}:{days}:{int(starting_equity)}"
+
+
+def _cache_get(key: str) -> Optional["TwinResult"]:
+    """Return cached TwinResult if still within TTL, else None."""
+    ts = _twin_cache_ts.get(key)
+    if ts is None:
+        return None
+    if time.time() - ts > CACHE_TTL_SECONDS:
+        # Expired — evict
+        _twin_cache.pop(key, None)
+        _twin_cache_ts.pop(key, None)
+        return None
+    return _twin_cache.get(key)
+
+
+def _cache_set(key: str, result: "TwinResult") -> None:
+    """Store a TwinResult in the cache."""
+    _twin_cache[key] = result
+    _twin_cache_ts[key] = time.time()
+
+
+def invalidate_twin_cache(user_id: Optional[str] = None) -> int:
+    """
+    Invalidate cached Trading Twin results.
+
+    Args:
+        user_id: If provided, only invalidate this user's cache.
+                 If None, clear all cached results.
+    Returns:
+        Number of entries evicted.
+    """
+    if user_id is None:
+        count = len(_twin_cache)
+        _twin_cache.clear()
+        _twin_cache_ts.clear()
+        return count
+
+    prefix = f"twin:{user_id}:"
+    keys_to_remove = [k for k in _twin_cache if k.startswith(prefix)]
+    for k in keys_to_remove:
+        _twin_cache.pop(k, None)
+        _twin_cache_ts.pop(k, None)
+    return len(keys_to_remove)
 
 
 @dataclass
@@ -68,22 +126,35 @@ def generate_trading_twin(
     days: int = 30,
     starting_equity: float = 10000.0,
     prefer_real: bool = True,
+    force_refresh: bool = False,
 ) -> TwinResult:
     """
     Generate Trading Twin analysis.
 
     Steps:
-    1. Fetch user trades for the last N days (prefer real if available)
-    2. Tag each trade as impulsive or disciplined
-    3. Build dual equity curves
-    4. Compute summary statistics
-    5. Generate AI narrative
+    1. Check cache (return immediately if hit and not force_refresh)
+    2. Fetch user trades for the last N days (prefer real if available)
+    3. Tag each trade as impulsive or disciplined
+    4. Build dual equity curves
+    5. Compute summary statistics
+    6. Generate AI narrative
+    7. Cache the result
 
     Args:
         prefer_real: When True, use real trades (is_mock=False) if the user
                      has any; fall back to demo trades otherwise.
+        force_refresh: When True, skip cache and regenerate fresh result.
     """
     from behavior.models import Trade
+
+    key = _cache_key(user_id, days, starting_equity)
+
+    # Check cache (unless force_refresh)
+    if not force_refresh:
+        cached = _cache_get(key)
+        if cached is not None:
+            logger.info("Trading Twin cache hit: %s", key)
+            return cached
 
     cutoff = timezone.now() - timedelta(days=days)
 
@@ -145,7 +216,7 @@ def generate_trading_twin(
         starting_equity=starting_equity,
     )
 
-    return TwinResult(
+    result = TwinResult(
         equity_curve=equity_curve,
         impulsive_final_equity=round(impulsive_final, 2),
         disciplined_final_equity=round(disciplined_final, 2),
@@ -163,6 +234,12 @@ def generate_trading_twin(
         is_real_data=is_real_data,
         data_source=data_source,
     )
+
+    # Cache the result for subsequent requests
+    _cache_set(key, result)
+    logger.info("Trading Twin cached: %s (%d trades)", key, len(trades))
+
+    return result
 
 
 def _tag_impulsive_trades(
