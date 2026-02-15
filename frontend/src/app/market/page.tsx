@@ -17,6 +17,7 @@ import DataCard from "@/components/ui/DataCard";
 import DisclaimerBadge from "@/components/ui/DisclaimerBadge";
 import CollapsibleSection from "@/components/ui/CollapsibleSection";
 import LoadingDots from "@/components/ui/LoadingDots";
+import MarkdownRenderer from "@/components/ui/MarkdownRenderer";
 import { cn } from "@/lib/utils";
 import api, { type MarketSentiment, type MarketTechnicals } from "@/lib/api";
 import { useInstrumentUniverse, useEconomicCalendar, useTopHeadlines } from "@/hooks/useMarketData";
@@ -330,16 +331,40 @@ export default function MarketPage() {
           </div>
 
           {(analysis || isAnalyzing) && (
-            <div className="mt-3 animate-fade-in">
+            <div className="mt-5 animate-fade-in">
               <CollapsibleSection title="AI ANALYSIS" defaultOpen>
-                <div className="p-4 bg-surface/50">
+                <div className="p-5 bg-surface/50">
                   {isAnalyzing ? (
-                    <div className="flex items-center gap-2">
-                      <LoadingDots />
-                      <span className="text-[10px] text-muted mono-data">Analyzing market data...</span>
+                    <div className="flex items-start gap-3">
+                      <div className="w-7 h-7 rounded-lg bg-cyan/15 border border-cyan/25 flex items-center justify-center shrink-0 mt-0.5">
+                        <span className="text-[9px] text-cyan font-bold mono-data">AI</span>
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-[11px] font-semibold tracking-wider text-cyan/80 mono-data">TRADEIQ</span>
+                          <span className="flex items-center gap-1.5 ml-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-cyan animate-pulse" />
+                            <span className="text-[10px] text-cyan/60 mono-data">ANALYZING</span>
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <LoadingDots />
+                          <span className="text-xs text-muted">Analyzing market data for {selectedInstrument}...</span>
+                        </div>
+                      </div>
                     </div>
                   ) : (
-                    <div className="text-[11px] text-muted leading-relaxed mono-data whitespace-pre-wrap">{analysis}</div>
+                    <div className="flex items-start gap-3">
+                      <div className="w-7 h-7 rounded-lg bg-profit/10 border border-profit/20 flex items-center justify-center shrink-0 mt-0.5">
+                        <span className="text-[9px] text-profit font-bold mono-data">AI</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <span className="text-[11px] font-semibold tracking-wider text-profit/80 mono-data">TRADEIQ</span>
+                        </div>
+                        <MarkdownRenderer content={analysis} />
+                      </div>
+                    </div>
                   )}
                 </div>
               </CollapsibleSection>
@@ -355,8 +380,26 @@ export default function MarketPage() {
             ].map((q) => (
               <button
                 key={q}
-                onClick={() => setQuestion(q)}
-                className="px-4 py-2 rounded-md text-xs mono-data text-muted border border-border/50 hover:border-muted hover:text-white transition-colors"
+                onClick={() => {
+                  setQuestion(q);
+                  // Auto-submit on chip click
+                  if (!isAnalyzing && selectedInstrument) {
+                    setIsAnalyzing(true);
+                    setAnalysis("");
+                    const prompt = q.includes(selectedInstrument) ? q : `${selectedInstrument}: ${q}`;
+                    api.askMarketAnalyst(prompt)
+                      .then((response) => setAnalysis(response.answer + (response.disclaimer ? `\n\n${response.disclaimer}` : "")))
+                      .catch(() => setAnalysis("Unable to retrieve AI analysis right now. Please verify backend and API availability."))
+                      .finally(() => setIsAnalyzing(false));
+                  }
+                }}
+                disabled={isAnalyzing}
+                className={cn(
+                  "px-4 py-2 rounded-md text-xs mono-data border transition-colors",
+                  isAnalyzing
+                    ? "text-muted-foreground/50 border-border/30 cursor-not-allowed"
+                    : "text-muted border-border/50 hover:border-muted hover:text-white"
+                )}
               >
                 {q}
               </button>
