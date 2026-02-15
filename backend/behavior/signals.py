@@ -1,12 +1,15 @@
 # behavior/signals.py
 # Django signals for automatic behavioral analysis
 
+import logging
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
 from datetime import timedelta
 from .models import Trade, BehavioralMetric
 from .tools import analyze_trade_patterns, save_behavioral_metric
+
+logger = logging.getLogger(__name__)
 
 
 @receiver(post_save, sender=Trade)
@@ -67,7 +70,7 @@ def update_daily_metrics(sender, instance, created, **kwargs):
         risk_score = calculate_risk_score(analysis.get('patterns', {}))
         
     except Exception as e:
-        print(f"Error in pattern analysis: {e}")
+        logger.warning("Error in pattern analysis: %s", e)
         pattern_flags = {}
         emotional_state = 'unknown'
         risk_score = None

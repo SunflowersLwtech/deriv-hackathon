@@ -115,7 +115,7 @@ export function useStreamingChat(userId?: string): UseStreamingChatReturn {
     const ws = new TradeIQWebSocket("/chat/", userId);
     wsRef.current = ws;
 
-    ws.onStreamStatus((status: StreamStatus) => {
+    const unsubStatus = ws.onStreamStatus((status: StreamStatus) => {
       if (status.status === "thinking") {
         setStreamStatus("thinking");
         setCurrentToolCall(null);
@@ -130,13 +130,13 @@ export function useStreamingChat(userId?: string): UseStreamingChatReturn {
       }
     });
 
-    ws.onStreamChunk((chunk: string) => {
+    const unsubChunk = ws.onStreamChunk((chunk: string) => {
       setStreamStatus("streaming");
       streamBufferRef.current += chunk;
       setStreamingMessage(streamBufferRef.current);
     });
 
-    ws.onStreamDone((fullContent: string) => {
+    const unsubDone = ws.onStreamDone((fullContent: string) => {
       clearStreamTimeout();
       setStreamStatus("done");
       setStreamingMessage("");
@@ -153,7 +153,7 @@ export function useStreamingChat(userId?: string): UseStreamingChatReturn {
       setTimeout(() => setStreamStatus("idle"), 300);
     });
 
-    ws.onMessage((data: WebSocketMessage) => {
+    const unsubMessage = ws.onMessage((data: WebSocketMessage) => {
       if (data.type === "reply") {
         clearStreamTimeout();
         const content = (data.message as string) || (data.content as string) || "";
@@ -171,6 +171,10 @@ export function useStreamingChat(userId?: string): UseStreamingChatReturn {
     ws.connect();
     return () => {
       clearStreamTimeout();
+      unsubStatus();
+      unsubChunk();
+      unsubDone();
+      unsubMessage();
       ws.disconnect();
     };
   }, [userId, clearStreamTimeout, setMessages]);

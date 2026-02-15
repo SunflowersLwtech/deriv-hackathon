@@ -645,7 +645,7 @@ def _search_newsapi(query: str, limit: int) -> List[Dict[str, Any]]:
             for article in data.get("articles", [])[:limit]
         ]
     except Exception as e:
-        print(f"NewsAPI error: {e}")
+        logger.warning("NewsAPI error: %s", e)
         return []
 
 
@@ -838,7 +838,7 @@ def _search_finnhub_news(query: str, limit: int) -> List[Dict[str, Any]]:
 
         return articles
     except Exception as e:
-        print(f"Finnhub error: {e}")
+        logger.warning("Finnhub error: %s", e)
         return []
 
 
@@ -1258,7 +1258,7 @@ Generate a clear, factual explanation (2-3 sentences max)."""
             "generated_at": datetime.now().isoformat()
         }
     except Exception as e:
-        print(f"Market explanation error: {e}")
+        logger.warning("Market explanation error: %s", e)
         return {
             "instrument": instrument,
             "move": move_description,

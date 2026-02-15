@@ -33,7 +33,7 @@ class MarketInsightViewSet(viewsets.ReadOnlyModelViewSet):
             try:
                 generate_insights_from_news(limit=8, max_insights=5)
             except Exception as e:
-                print(f"Failed to auto-generate insights: {e}")
+                logger.warning("Failed to auto-generate insights: %s", e)
         return super().list(request, *args, **kwargs)
 
     @action(detail=False, methods=["post"], permission_classes=[AllowAny])

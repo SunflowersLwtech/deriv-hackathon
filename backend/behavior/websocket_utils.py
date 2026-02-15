@@ -1,11 +1,14 @@
 # behavior/websocket_utils.py
 # WebSocket utilities for sending behavioral nudges
 
+import logging
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from django.utils import timezone
 from typing import Dict, Any
 import json
+
+logger = logging.getLogger(__name__)
 
 
 def send_behavioral_nudge(user_id: str, nudge_data: Dict[str, Any]) -> bool:
@@ -44,7 +47,7 @@ def send_behavioral_nudge(user_id: str, nudge_data: Dict[str, Any]) -> bool:
         return True
         
     except Exception as e:
-        print(f"Error sending WebSocket nudge: {e}")
+        logger.warning("Error sending WebSocket nudge: %s", e)
         return False
 
 
@@ -135,7 +138,7 @@ def send_trading_summary(user_id: str, stats: Dict[str, Any]) -> bool:
         return True
         
     except Exception as e:
-        print(f"Error sending trading summary: {e}")
+        logger.warning("Error sending trading summary: %s", e)
         return False
 
 

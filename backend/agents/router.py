@@ -266,7 +266,8 @@ def route_query(
                 "This is analysis, not financial advice."
             )
         else:
-            fallback_response = f"Error processing query: {error_text}"
+            logger.exception("Router query error")
+            fallback_response = "An error occurred while processing your request. Please try again."
 
         return {
             "response": fallback_response,

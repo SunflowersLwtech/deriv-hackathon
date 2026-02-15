@@ -1,5 +1,6 @@
 # behavior/views.py
 import os
+import logging
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -8,6 +9,8 @@ from datetime import timedelta
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 import json
+
+logger = logging.getLogger(__name__)
 
 from .models import UserProfile, Trade, BehavioralMetric
 from .serializers import UserProfileSerializer, TradeSerializer, BehavioralMetricSerializer
@@ -73,7 +76,7 @@ class TradeViewSet(viewsets.ModelViewSet):
         try:
             self._analyze_and_nudge(trade.user)
         except Exception as e:
-            print(f"Error in behavioral analysis: {e}")
+            logger.warning("Error in behavioral analysis: %s", e)
             # Don't fail the trade creation if analysis fails
 
         # Trigger live narrator
@@ -89,8 +92,8 @@ class TradeViewSet(viewsets.ModelViewSet):
                 },
                 event_type="new_trade",
             )
-        except Exception:
-            pass  # Narrator failure must not block trade creation
+        except Exception as e:
+            logger.debug("Narrator event failed (non-blocking): %s", e)
         
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
@@ -488,7 +491,8 @@ class DerivPortfolioView(APIView):
             portfolio = client.fetch_portfolio(api_token)
             return Response(portfolio)
         except Exception as exc:
-            return Response({"error": str(exc)}, status=500)
+            logger.exception("Portfolio fetch failed")
+            return Response({"error": "Failed to fetch portfolio. Please try again."}, status=500)
 
 
 class DerivBalanceView(APIView):
@@ -506,7 +510,8 @@ class DerivBalanceView(APIView):
             balance = client.fetch_balance(api_token)
             return Response(balance)
         except Exception as exc:
-            return Response({"error": str(exc)}, status=500)
+            logger.exception("Balance fetch failed")
+            return Response({"error": "Failed to fetch balance. Please try again."}, status=500)
 
 
 class DerivRealityCheckView(APIView):
@@ -524,7 +529,8 @@ class DerivRealityCheckView(APIView):
             check = client.fetch_reality_check(api_token)
             return Response(check)
         except Exception as exc:
-            return Response({"error": str(exc)}, status=500)
+            logger.exception("Reality check fetch failed")
+            return Response({"error": "Failed to fetch reality check. Please try again."}, status=500)
 
 
 class SyncTradesView(APIView):

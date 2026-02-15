@@ -47,7 +47,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_discard("market_alerts", self.channel_name)
 
     async def receive(self, text_data):
-        data = json.loads(text_data)
+        try:
+            data = json.loads(text_data)
+        except (json.JSONDecodeError, TypeError) as exc:
+            logger.warning("Malformed WebSocket message: %s", exc)
+            await self.send(text_data=json.dumps({
+                "type": "error",
+                "message": "Invalid message format. Please send valid JSON.",
+            }))
+            return
         message = data.get("message") or data.get("content", "")
         agent_type = data.get("agent_type", "auto")
         user_id = data.get("user_id") or self.user_id
@@ -109,7 +117,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             # Send error as stream_done so the frontend resets properly
             await self.send(text_data=json.dumps({
                 "type": "stream_done",
-                "full_content": f"Sorry, an error occurred while processing your request: {exc}",
+                "full_content": "Sorry, an error occurred while processing your request. Please try again.",
                 "agent_type": resolved_type,
                 "tools_used": [],
             }))

@@ -1,18 +1,30 @@
 # backend/content/bluesky.py - Appendix B
 import re
+import logging
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 
 class BlueskyPublisher:
     """Publish trading content to Bluesky via AT Protocol."""
 
     def __init__(self):
-        from atproto import Client
-        self.client = Client()
-        self.client.login(
-            settings.BLUESKY_HANDLE,
-            settings.BLUESKY_APP_PASSWORD,
-        )
+        self.authenticated = False
+        handle = getattr(settings, "BLUESKY_HANDLE", None)
+        password = getattr(settings, "BLUESKY_APP_PASSWORD", None)
+        if not handle or not password:
+            logger.warning("Bluesky credentials not configured — publishing disabled")
+            self.client = None
+            return
+        try:
+            from atproto import Client
+            self.client = Client()
+            self.client.login(handle, password)
+            self.authenticated = True
+        except Exception as exc:
+            logger.error("Bluesky login failed: %s", exc)
+            self.client = None
 
     def _build_facets(self, text: str) -> list:
         """
@@ -45,6 +57,8 @@ class BlueskyPublisher:
         Publish a single post (max 300 chars).
         Supports hashtag facets and optional link card embed.
         """
+        if not self.authenticated or not self.client:
+            return {"uri": "", "cid": "", "url": "", "error": "Bluesky not authenticated"}
         text = self._auto_hashtags(text)
         facets = self._build_facets(text)
 
@@ -87,6 +101,8 @@ class BlueskyPublisher:
         Returns:
             {"uri": "at://...", "cid": "...", "url": "https://bsky.app/..."}
         """
+        if not self.authenticated or not self.client:
+            return {"uri": "", "cid": "", "url": "", "error": "Bluesky not authenticated"}
         if len(text) > 300:
             text = text[:297] + "..."
 
@@ -120,6 +136,8 @@ class BlueskyPublisher:
 
     def post_thread(self, posts: list) -> list:
         """Publish a thread (list of posts, each max 300 chars)."""
+        if not self.authenticated or not self.client:
+            return [{"error": "Bluesky not authenticated"}]
         results = []
         parent = None
         root = None
@@ -154,6 +172,8 @@ class BlueskyPublisher:
         Search Bluesky posts by keyword.
         Returns list of posts with author, text, and engagement.
         """
+        if not self.authenticated or not self.client:
+            return []
         try:
             resp = self.client.app.bsky.feed.search_posts(
                 params={"q": query, "limit": min(limit, 25)}
@@ -172,7 +192,7 @@ class BlueskyPublisher:
                 })
             return results
         except Exception as e:
-            print(f"Bluesky search error: {e}")
+            logger.warning("Bluesky search error: %s", e)
             return []
 
     def _uri_to_url(self, uri: str) -> str:

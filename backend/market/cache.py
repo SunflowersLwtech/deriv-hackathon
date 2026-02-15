@@ -6,8 +6,11 @@ Provides helpers for caching instrument prices and computing
 real price change percentages for the Market Monitor agent.
 """
 import os
+import logging
 import redis
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 _redis_client: Optional[redis.Redis] = None
@@ -61,7 +64,7 @@ def get_cached_price(instrument: str) -> Optional[float]:
         val = r.get(key)
         return float(val) if val is not None else None
     except Exception as e:
-        print(f"[Redis] get_cached_price error: {e}")
+        logger.debug("Redis get_cached_price error: %s", e)
         return None
 
 
@@ -72,4 +75,4 @@ def set_cached_price(instrument: str, price: float, ttl_seconds: int = 300):
         key = f"tradeiq:price:{instrument}"
         r.setex(key, ttl_seconds, str(price))
     except Exception as e:
-        print(f"[Redis] set_cached_price error: {e}")
+        logger.debug("Redis set_cached_price error: %s", e)

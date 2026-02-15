@@ -3,6 +3,7 @@
 
 import json
 import asyncio
+import logging
 import websockets
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone as dt_timezone
@@ -12,6 +13,8 @@ from django.conf import settings
 import os
 
 from .models import Trade, UserProfile
+
+logger = logging.getLogger(__name__)
 
 
 class DerivAPIError(Exception):
@@ -56,21 +59,36 @@ class DerivClient:
             raise DerivAPIError("Deriv API token is required (pass api_token or set DERIV_TOKEN).")
         return token
     
-    async def connect(self, demo: bool = False):
+    async def connect(self, demo: bool = False, max_retries: int = 3):
         """
-        Establish WebSocket connection.
-        
+        Establish WebSocket connection with retry logic.
+
         Args:
             demo: Use demo account endpoint
+            max_retries: Maximum connection attempts before giving up
         """
         url = self.ws_url_demo if demo else self.ws_url
-        self.websocket = await websockets.connect(url)
-        return self.websocket
+        last_exc = None
+        for attempt in range(max_retries):
+            try:
+                self.websocket = await asyncio.wait_for(
+                    websockets.connect(url),
+                    timeout=10,
+                )
+                return self.websocket
+            except (asyncio.TimeoutError, OSError, websockets.exceptions.WebSocketException) as exc:
+                last_exc = exc
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1 * (2 ** attempt))  # exponential backoff
+        raise DerivAPIError(f"Failed to connect to Deriv WS after {max_retries} attempts: {last_exc}")
     
     async def disconnect(self):
         """Close WebSocket connection."""
         if self.websocket:
-            await self.websocket.close()
+            try:
+                await asyncio.wait_for(self.websocket.close(), timeout=5)
+            except (asyncio.TimeoutError, Exception):
+                pass
             self.websocket = None
     
     async def send_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
@@ -86,11 +104,14 @@ class DerivClient:
         Raises:
             DerivAPIError: If API returns error
         """
-        if not self.websocket:
+        if not self.websocket or self.websocket.closed:
             raise DerivAPIError("WebSocket not connected. Call connect() first.")
-        
+
         await self.websocket.send(json.dumps(request))
-        response_text = await self.websocket.recv()
+        try:
+            response_text = await asyncio.wait_for(self.websocket.recv(), timeout=15)
+        except asyncio.TimeoutError:
+            raise DerivAPIError("Deriv API response timed out after 15 seconds")
         response = json.loads(response_text)
         
         # Check for errors
@@ -178,7 +199,7 @@ class DerivClient:
                 trade = self._parse_transaction(t)
                 trades.append(trade)
             except Exception as e:
-                print(f"Error parsing transaction {t.get('transaction_id')}: {e}")
+                logger.warning("Error parsing transaction %s: %s", t.get('transaction_id'), e)
                 continue
         
         return trades
@@ -445,6 +466,8 @@ class DerivClient:
         t = threading.Thread(target=_thread_target)
         t.start()
         t.join(timeout=30)
+        if t.is_alive():
+            raise DerivAPIError("Deriv API operation timed out after 30 seconds")
         if exception[0]:
             raise exception[0]
         return result[0]
@@ -731,7 +754,7 @@ class DerivClient:
                     await callback(parsed_trade)
                     
         except websockets.exceptions.ConnectionClosed:
-            print("WebSocket connection closed")
+            logger.info("Deriv WebSocket subscription connection closed")
 
 
 # Singleton instance

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, useEffect } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, useMemo } from "react";
 import api, {
   type PipelineResponse,
   type CustomEvent,
@@ -331,12 +331,29 @@ export default function PipelineProvider({ children }: { children: React.ReactNo
         }
 
         setResult(response);
-      } catch {
-        // ── Fallback to demo data instead of showing "Failed to fetch" ──
+      } catch (err: unknown) {
+        // Differentiate error types for better UX
+        const isNetwork =
+          err instanceof TypeError && /fetch|network/i.test(err.message);
+        const status = (err as { status?: number })?.status;
+
+        let errorMsg: string;
+        if (isNetwork) {
+          errorMsg = "Backend unavailable — showing demo data";
+        } else if (status === 401 || status === 403) {
+          errorMsg = "Authentication error — showing demo data";
+        } else if (status === 429) {
+          errorMsg = "Rate limited — please wait a moment and try again";
+        } else if (status && status >= 500) {
+          errorMsg = "Server error — showing demo data";
+        } else {
+          errorMsg = "Unexpected error — showing demo data";
+        }
+
         const fallback = generateDemoFallback(customEvent);
         await animateStages(fallback, setStages);
         setResult(fallback);
-        setError("Backend unavailable — showing demo data");
+        setError(errorMsg);
       } finally {
         setIsRunning(false);
       }
@@ -356,21 +373,29 @@ export default function PipelineProvider({ children }: { children: React.ReactNo
 
       await animateStages(response, setStages);
       setResult(response);
-    } catch {
-      // ── Fallback to demo data instead of showing "Failed to fetch" ──
+    } catch (err: unknown) {
+      const isNetwork =
+        err instanceof TypeError && /fetch|network/i.test(err.message);
+      const errorMsg = isNetwork
+        ? "Backend unavailable — showing demo data"
+        : "Unexpected error — showing demo data";
+
       const fallback = generateDemoFallback();
       await animateStages(fallback, setStages);
       setResult(fallback);
-      setError("Backend unavailable — showing demo data");
+      setError(errorMsg);
     } finally {
       setIsRunning(false);
     }
   }, [resetState]);
 
+  const contextValue = useMemo(
+    () => ({ stages, result, isRunning, error, mode, setMode, runPipeline, runAutoScan }),
+    [stages, result, isRunning, error, mode, setMode, runPipeline, runAutoScan],
+  );
+
   return (
-    <PipelineContext.Provider
-      value={{ stages, result, isRunning, error, mode, setMode, runPipeline, runAutoScan }}
-    >
+    <PipelineContext.Provider value={contextValue}>
       {children}
     </PipelineContext.Provider>
   );

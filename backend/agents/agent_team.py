@@ -14,11 +14,14 @@ independently or chained via `run_pipeline()`.
 from __future__ import annotations
 
 import json
+import logging
 import random
 import traceback
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 from concurrent.futures import ThreadPoolExecutor
 
@@ -201,7 +204,7 @@ def market_monitor_detect(
                 return None
             return (inst, data)
         except Exception as exc:
-            print(f"[MarketMonitor] Error scanning {inst}: {exc}")
+            logger.warning("[MarketMonitor] Error scanning %s: %s", inst, exc)
             return None
 
     with ThreadPoolExecutor(max_workers=min(len(instruments), 6)) as executor:
@@ -354,7 +357,7 @@ Return JSON only."""
             key_data_points=parsed.get("key_data_points", []),
         )
     except Exception as exc:
-        print(f"[Analyst] Error: {exc}")
+        logger.warning("[Analyst] Error: %s", exc)
         # Ensure sentiment_score is never exactly 0.0
         fallback_score = float(sentiment.get("score", 0.0))
         if fallback_score == 0.0:
@@ -462,7 +465,7 @@ Provide a personalised impact assessment. Return JSON only."""
             suggestions=parsed.get("suggestions", ["Review your position sizing."]),
         )
     except Exception as exc:
-        print(f"[PortfolioAdvisor] Error: {exc}")
+        logger.warning("[PortfolioAdvisor] Error: %s", exc)
         return PersonalizedInsight(
             instrument=report.instrument,
             impact_summary=f"The {report.instrument} event may relate to your current positions.",
@@ -523,7 +526,7 @@ def behavioral_sentinel_analyze(
         patterns = analyze_trade_patterns(demo_user_id, hours=168)  # 7 days
         stats = get_trading_statistics(demo_user_id, days=30)
     except Exception as exc:
-        print(f"[Sentinel] Error fetching behavioral data: {exc}")
+        logger.warning("[Sentinel] Error fetching behavioral data: %s", exc)
         patterns = {"patterns": {}, "summary": "No data available", "trade_count": 0}
         stats = {"total_trades": 0, "win_rate": 0}
 
@@ -547,7 +550,7 @@ def behavioral_sentinel_analyze(
                 f"with a {reactive_wr}% win rate on those trades."
             )
     except Exception as exc:
-        print(f"[Sentinel] Pre-compute pattern error: {exc}")
+        logger.warning("[Sentinel] Pre-compute pattern error: %s", exc)
 
     # Build the fusion prompt
     behavioral_summary = patterns.get("summary", "No patterns detected")
@@ -613,7 +616,7 @@ Return JSON only."""
             user_stats_snapshot=stats,
         )
     except Exception as exc:
-        print(f"[Sentinel] LLM Error: {exc}")
+        logger.warning("[Sentinel] LLM Error: %s", exc)
         return BehavioralSentinelInsight(
             instrument=event.instrument,
             market_event_summary=report.event_summary,
@@ -712,7 +715,7 @@ Generate an English Bluesky post <= 300 chars. Return JSON only."""
             data_points=parsed.get("data_points", []),
         )
     except Exception as exc:
-        print(f"[ContentCreator] Error: {exc}")
+        logger.warning("[ContentCreator] Error: %s", exc)
         return MarketCommentary(
             post=f"📊 {report.instrument} moved {report.sentiment}. {compliance_tag}",
             hashtags=["#TradeIQ", "#Markets"],
@@ -752,11 +755,11 @@ def image_generator_create(
         if image_result.get("success"):
             return image_result
         else:
-            print(f"[ImageGenerator] Failed: {image_result.get('error')}")
+            logger.warning("[ImageGenerator] Failed: %s", image_result.get('error'))
             return None
 
     except Exception as exc:
-        print(f"[ImageGenerator] Error: {exc}")
+        logger.warning("[ImageGenerator] Error: %s", exc)
         traceback.print_exc()
         return None
 
@@ -957,7 +960,7 @@ def copytrading_recommend(user_id: str) -> CopyTradingRecommendation:
     try:
         ai_rec = recommend_trader(user_id)
     except Exception as exc:
-        print(f"[CopyTrading] Recommendation error: {exc}")
+        logger.warning("[CopyTrading] Recommendation error: %s", exc)
 
     return CopyTradingRecommendation(
         top_traders=top_traders,

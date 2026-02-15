@@ -5,8 +5,11 @@ to get the appropriate Deriv API token for requests.
 """
 
 import os
+import logging
 
 from .models import DerivAccount
+
+logger = logging.getLogger(__name__)
 
 
 def get_deriv_token(request) -> str:
@@ -32,8 +35,8 @@ def get_deriv_token(request) -> str:
                 ).first()
                 if account:
                     token = account.token
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to lookup Deriv account for user %s: %s", user_id, e)
 
     # 2. Fall back to env only when no user account token found
     if not token:

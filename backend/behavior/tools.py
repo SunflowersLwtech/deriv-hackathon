@@ -8,6 +8,9 @@ from .models import UserProfile, Trade, BehavioralMetric
 from .detection import analyze_all_patterns
 from agents.llm_client import get_llm_client
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def get_recent_trades(user_id: str, hours: int = 24) -> List[Dict[str, Any]]:
@@ -97,7 +100,7 @@ def analyze_trade_patterns(user_id: str, hours: int = 24) -> Dict[str, Any]:
             avg_daily = sum(m.total_trades for m in recent_metrics) / recent_metrics.count()
         else:
             avg_daily = 8  # Default assumption
-    except:
+    except Exception:
         avg_daily = 8
     
     # Determine data source: check if any trade is real (is_mock=False)
@@ -226,7 +229,7 @@ Generate a JSON response with:
         return nudge_data
         
     except Exception as e:
-        print(f"DeepSeek API error: {e}")
+        logger.warning("DeepSeek nudge generation failed: %s", e)
         # Fallback to rule-based nudge
         return generate_behavioral_nudge_fallback(patterns)
 
@@ -386,5 +389,5 @@ def save_behavioral_metric(user_id: str, trading_date: datetime.date, metric_dat
         return True
         
     except Exception as e:
-        print(f"Error saving behavioral metric: {e}")
+        logger.warning("Error saving behavioral metric: %s", e)
         return False

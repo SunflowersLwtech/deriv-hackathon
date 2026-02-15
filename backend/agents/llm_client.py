@@ -85,9 +85,15 @@ class DeepSeekClient:
         try:
             return self.client.chat.completions.create(**params)
         except Exception as e:
-            error_str = str(e)
-            # If primary fails with 402 (insufficient balance), try fallback
-            if ("402" in error_str or "Insufficient" in error_str) and self._fallback_client:
+            error_str = str(e).lower()
+            # Fallback on: 402 (insufficient balance), 429 (rate limit),
+            # 5xx (server errors), timeouts, and auth failures
+            should_fallback = self._fallback_client and any(
+                trigger in error_str
+                for trigger in ("402", "429", "500", "502", "503", "insufficient", "timeout", "rate")
+            )
+            if should_fallback:
+                logger.warning("Primary LLM failed (%s), trying fallback", e)
                 fallback_params = params.copy()
                 fallback_params["model"] = self._fallback_model or "deepseek-chat"
                 return self._fallback_client.chat.completions.create(**fallback_params)
