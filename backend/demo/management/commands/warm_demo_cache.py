@@ -3,7 +3,7 @@ from demo.fallback import warm_cache
 
 
 class Command(BaseCommand):
-    help = "Pre-warm demo cache for hackathon presentation"
+    help = "Pre-warm demo cache for demo presentation"
 
     def handle(self, *args, **options):
         self.stdout.write("Warming demo cache...")

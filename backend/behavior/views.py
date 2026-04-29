@@ -260,7 +260,7 @@ class TradeViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def load_demo_scenario(self, request):
         """
-        Load demo scenario for hackathon.
+        Load demo scenario.
         POST /api/behavior/trades/load_demo_scenario/
         {"scenario": "revenge_trading"}
         """
@@ -383,7 +383,7 @@ class BehavioralMetricViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def create_demo_user(self, request):
         """
-        Create a demo user for hackathon.
+        Create a demo user.
         POST /api/behavior/metrics/create_demo_user/
         """
         demo_user, created = UserProfile.objects.get_or_create(

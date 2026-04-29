@@ -1,5 +1,5 @@
 """
-Demo Script Engine for TradeIQ Hackathon Pitch
+Demo Script Engine for TradeIQ Pitch
 Pre-defined demo scripts that execute pipeline steps sequentially.
 """
 from dataclasses import dataclass, field, asdict

@@ -9,7 +9,6 @@
 </p>
 
 <p align="center">
-  <a href="https://deriv.com"><img src="https://img.shields.io/badge/Deriv_AI_Hackathon-2026-ff444f?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0iTTEyIDJMMiAyMmgyMEwxMiAyeiIgZmlsbD0id2hpdGUiLz48L3N2Zz4=" alt="Deriv Hackathon 2026" /></a>
   <img src="https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=next.js" alt="Next.js" />
   <img src="https://img.shields.io/badge/Django-5-092E20?style=for-the-badge&logo=django" alt="Django" />
   <img src="https://img.shields.io/badge/DeepSeek-AI-4A90D9?style=for-the-badge" alt="DeepSeek" />
@@ -524,7 +523,7 @@ NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 ```
 
-All API keys work on **free tiers** for hackathon demo purposes.
+All API keys work on **free tiers** for demo purposes.
 
 </details>
 
@@ -546,7 +545,7 @@ Pre-configured behavioral patterns for live demo:
 
 ### Championship Demo Script (V2)
 
-A 7-step, 4-act, ~120-second championship demo designed for hackathon pitches:
+A 7-step, 4-act, ~120-second championship demo designed for product pitches:
 
 | Act | Step | What Happens | Wow Factor |
 |-----|------|-------------|------------|
@@ -582,7 +581,7 @@ curl http://localhost:8000/api/demo/health/
 
 | Decision | Rationale |
 |----------|-----------|
-| **No predictions/signals** | Hackathon requirement: educational analysis only, brand-safe |
+| **No predictions/signals** | Educational analysis only, brand-safe |
 | **Supportive coaching** | Nudges inform and suggest, never block trades or judge |
 | **Streaming-first** | Token-by-token LLM output via WebSocket — feels alive, not static |
 | **Trading Twin as killer feature** | Visual proof that impulsive trading costs money — emotional impact |
@@ -622,8 +621,6 @@ All AI outputs pass through a compliance filter before reaching users:
 ---
 
 ## License
-
-Built for the [Deriv AI Hackathon 2026](https://deriv.com).
 
 <p align="center">
   <img src="frontend/public/tradeiq_favicon.svg" width="40" alt="TradeIQ" />

@@ -14,7 +14,7 @@ DEMO_USER_ID = "d1000000-0000-0000-0000-000000000001"
 
 
 class Command(BaseCommand):
-    help = "Seed demo user and trades for hackathon demo"
+    help = "Seed demo user and trades for product demo"
 
     def add_arguments(self, parser):
         parser.add_argument(

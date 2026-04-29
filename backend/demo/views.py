@@ -1,5 +1,5 @@
 """
-Demo scenario management for hackathon
+Demo scenario management
 Loads demo scenarios from Supabase demo_scenarios table
 """
 import logging

@@ -6,7 +6,7 @@ from .models import Trade, UserProfile
 
 
 def load_demo_scenario(user_email='demo@tradeiq.com', scenario='revenge_trading'):
-    """Load demo trading scenario for hackathon."""
+    """Load demo trading scenario."""
     
     user, _ = UserProfile.objects.get_or_create(
         email=user_email,

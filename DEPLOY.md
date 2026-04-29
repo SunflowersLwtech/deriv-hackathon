@@ -37,7 +37,7 @@
 
 ```bash
 # 1. Clone the repository
-git clone <repo-url> && cd "deriv hackathon"
+git clone <repo-url> && cd tradeiq
 
 # 2. Configure environment variables
 cp .env.example .env

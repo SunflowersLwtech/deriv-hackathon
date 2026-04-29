@@ -274,7 +274,7 @@ export default function LoginPage() {
         {/* Footer */}
         <div className="text-center mt-6">
           <p className="text-[9px] text-muted-foreground/50 mono-data">
-            Deriv AI Hackathon 2026 &middot; TradeIQ v1.0
+            TradeIQ v1.0
           </p>
         </div>
       </div>

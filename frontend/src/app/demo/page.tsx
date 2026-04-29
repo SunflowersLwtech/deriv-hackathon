@@ -147,7 +147,7 @@ export default function DemoPage() {
         {/* Championship Header */}
         <div className="text-center space-y-3">
           <div className="inline-flex items-center gap-2 px-3 py-1 bg-profit/10 border border-profit/20 rounded-full text-[10px] text-profit font-bold tracking-widest mono-data">
-            DERIV AI HACKATHON 2026
+            TRADEIQ
           </div>
           <h1 className="text-3xl font-bold text-white tracking-wider">
             TRADEIQ DEMO
